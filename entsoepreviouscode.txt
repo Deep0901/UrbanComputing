@@ -1,0 +1,322 @@
+import requests
+import pandas as pd
+from datetime import datetime, timedelta
+import os
+import xml.etree.ElementTree as ET
+
+class ENTSOEClient:
+    """
+    Client for interacting with ENTSOE Transparency Platform API.
+    Fetches real-time energy prices, load data, and generation mix.
+    """
+    
+    BASE_URL = "https://web-api.tp.entsoe.eu/api"
+    
+    # Domain codes for 17 European countries/regions
+    DOMAINS = {
+        'Germany-Luxembourg': '10Y1001A1001A82H',
+        'France': '10YFR-RTE------C',
+        'Italy': '10YIT-GRTN-----B',
+        'Spain': '10YES-REE------0',
+        'Netherlands': '10YNL----------L',
+        'Belgium': '10YBE----------2',
+        'Austria': '10YAT-APG------L',
+        'Poland': '10YPL-AREA-----S',
+        'Switzerland': '10YCH-SWISSGRIDZ',
+        'Czech Republic': '10YCZ-CEPS-----N',
+        'Denmark': '10Y1001A1001A65H',
+        'Sweden': '10YSE-1--------K',
+        'Norway': '10YNO-0--------C',
+        'UK': '10YGB----------A',
+        'Ireland': '10YIE-1001A00010',
+        'Portugal': '10YPT-REN------W',
+        'Greece': '10YGR-HTSO-----Y'
+    }
+    
+    def __init__(self, api_token=None):
+        """
+        Initialize ENTSOE client with API token.
+        Token can be provided directly or via ENTSOE_API_TOKEN environment variable.
+        """
+        self.api_token = api_token or os.getenv('ENTSOE_API_TOKEN', 'ef56f793-3dc6-4851-8c51-e1e37f813de4')
+        if not self.api_token:
+            raise ValueError(
+                "ENTSOE API token is required. "
+                "Set it via ENTSOE_API_TOKEN environment variable or pass it directly. "
+                "Get your free token at: https://transparency.entsoe.eu/"
+            )
+    
+    # def _make_request(self, document_type, domain, start, end, process_type=None):
+    #     """
+    #     Make a generic API request to ENTSOE.
+    #     """
+    #     params = {
+    #         'securityToken': self.api_token,
+    #         'documentType': document_type,
+    #         'in_Domain': domain,
+    #         'out_Domain': domain,
+    #         'periodStart': start.strftime('%Y%m%d%H%M'),
+    #         'periodEnd': end.strftime('%Y%m%d%H%M')
+    #     }
+        
+    #     if process_type:
+    #         params['processType'] = process_type
+        
+    #     try:
+    #         response = requests.get(self.BASE_URL, params=params, timeout=30)
+    #         response.raise_for_status()
+    #         return response.text
+    #     except requests.exceptions.RequestException as e:
+    #         raise Exception(f"ENTSOE API request failed: {str(e)}")
+
+    def _make_request(self, document_type, domain, start, end, process_type=None):
+        params = {
+            'securityToken': self.api_token,
+            'documentType': document_type,
+            'periodStart': start.strftime('%Y%m%d%H%M'),
+            'periodEnd': end.strftime('%Y%m%d%H%M')
+        }
+
+        # Use correct domain parameters for each document type
+        if document_type in ['A44']:  # Day-ahead prices
+            params['out_Domain'] = domain
+        else:  # Actual load, generation forecast, etc.
+            params['in_Domain'] = domain
+
+        if process_type:
+            params['processType'] = process_type
+
+        try:
+            response = requests.get(self.BASE_URL, params=params, timeout=30)
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"ENTSOE API request failed: {str(e)}")
+    
+    def _parse_timeseries(self, xml_data):
+        """
+        Parse XML response and extract time series data.
+        """
+        try:
+            root = ET.fromstring(xml_data)
+            
+            # Define namespace
+            ns = {'ns': 'urn:iec62325.351:tc57wg16:451-3:publicationdocument:7:0'}
+            
+            timeseries_list = root.findall('.//ns:TimeSeries', ns)
+            
+            if not timeseries_list:
+                return pd.DataFrame()
+            
+            all_data = []
+            
+            for ts in timeseries_list:
+                periods = ts.findall('.//ns:Period', ns)
+                
+                for period in periods:
+                    start_str = period.find('ns:timeInterval/ns:start', ns).text
+                    start_time = pd.to_datetime(start_str)
+                    
+                    resolution = period.find('ns:resolution', ns).text
+                    
+                    # Parse resolution (e.g., PT60M = 60 minutes)
+                    if 'PT' in resolution and 'M' in resolution:
+                        minutes = int(resolution.replace('PT', '').replace('M', ''))
+                    else:
+                        minutes = 60  # Default to hourly
+                    
+                    points = period.findall('.//ns:Point', ns)
+                    
+                    for point in points:
+                        position = int(point.find('ns:position', ns).text)
+                        value_elem = point.find('ns:price.amount', ns)
+                        if value_elem is None:
+                            value_elem = point.find('ns:quantity', ns)
+                        
+                        if value_elem is not None:
+                            value = float(value_elem.text)
+                            timestamp = start_time + timedelta(minutes=(position - 1) * minutes)
+                            all_data.append({'datetime': timestamp, 'value': value})
+            
+            if all_data:
+                df = pd.DataFrame(all_data)
+                df = df.groupby('datetime')['value'].mean().reset_index()
+                df = df.sort_values('datetime')
+                return df
+            
+            return pd.DataFrame()
+        
+        except Exception as e:
+            raise Exception(f"Failed to parse ENTSOE XML response: {str(e)}")
+    
+    def get_day_ahead_prices(self, country, days=7):
+        """
+        Fetch day-ahead electricity prices.
+        
+        Args:
+            country: Country name from DOMAINS dict
+            days: Number of days to fetch (1-30)
+        
+        Returns:
+            DataFrame with datetime and price columns
+        """
+        if country not in self.DOMAINS:
+            raise ValueError(f"Country '{country}' not supported. Choose from: {list(self.DOMAINS.keys())}")
+        
+        domain = self.DOMAINS[country]
+        end = datetime.now().replace(minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=days)
+        
+        xml_data = self._make_request('A44', domain, start, end)
+        df = self._parse_timeseries(xml_data)
+        
+        if not df.empty:
+            df.columns = ['datetime', 'price']
+        
+        return df
+    
+    def get_actual_load(self, country, days=7):
+        """
+        Fetch actual total load (demand).
+        
+        Args:
+            country: Country name from DOMAINS dict
+            days: Number of days to fetch (1-30)
+        
+        Returns:
+            DataFrame with datetime and load columns
+        """
+        if country not in self.DOMAINS:
+            raise ValueError(f"Country '{country}' not supported. Choose from: {list(self.DOMAINS.keys())}")
+        
+        domain = self.DOMAINS[country]
+        end = datetime.now().replace(minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=days)
+        
+        xml_data = self._make_request('A65', domain, start, end)
+        df = self._parse_timeseries(xml_data)
+        
+        if not df.empty:
+            df.columns = ['datetime', 'load']
+        
+        return df
+    
+    def get_generation_forecast(self, country, days=7):
+        """
+        Fetch day-ahead generation forecast.
+        
+        Args:
+            country: Country name from DOMAINS dict
+            days: Number of days to fetch (1-30)
+        
+        Returns:
+            DataFrame with datetime and forecast columns
+        """
+        if country not in self.DOMAINS:
+            raise ValueError(f"Country '{country}' not supported. Choose from: {list(self.DOMAINS.keys())}")
+        
+        domain = self.DOMAINS[country]
+        end = datetime.now().replace(minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=days)
+        
+        try:
+            xml_data = self._make_request('A71', domain, start, end, process_type='A01')
+            df = self._parse_timeseries(xml_data)
+            
+            if not df.empty:
+                df.columns = ['datetime', 'forecast']
+            
+            return df
+        except:
+            return pd.DataFrame()
+    
+    def get_energy_data(self, country, days=7):
+        """
+        Fetch comprehensive energy data (prices + load).
+        Creates a dataset suitable for model training.
+        
+        Args:
+            country: Country name from DOMAINS dict
+            days: Number of days to fetch (1-30)
+        
+        Returns:
+            DataFrame with datetime, energy_consumption (load), and price columns
+        """
+        prices_df = self.get_day_ahead_prices(country, days)
+        load_df = self.get_actual_load(country, days)
+        
+        if prices_df.empty or load_df.empty:
+            raise Exception("Failed to fetch complete data from ENTSOE API")
+        
+        # Merge on datetime
+        df = pd.merge(load_df, prices_df, on='datetime', how='inner')
+        df = df.rename(columns={'load': 'energy_consumption'})
+        
+        # Ensure chronological order
+        df = df.sort_values('datetime').reset_index(drop=True)
+        
+        return df
+    
+    def get_market_context(self, country, days=1):
+        """
+        Get recent market context for reasoning.
+        Returns summary statistics and trends.
+        
+        Args:
+            country: Country name from DOMAINS dict
+            days: Number of days for context (default 1)
+        
+        Returns:
+            Dictionary with market context information
+        """
+        try:
+            # Fetch recent data
+            prices_df = self.get_day_ahead_prices(country, days)
+            load_df = self.get_actual_load(country, days)
+            
+            context = {
+                'country': country,
+                'data_available': True,
+                'price_stats': {},
+                'load_stats': {},
+                'trends': {}
+            }
+            
+            if not prices_df.empty:
+                context['price_stats'] = {
+                    'current': float(prices_df.iloc[-1]['price']),
+                    'mean': float(prices_df['price'].mean()),
+                    'min': float(prices_df['price'].min()),
+                    'max': float(prices_df['price'].max()),
+                    'std': float(prices_df['price'].std())
+                }
+                
+                # Calculate trend
+                if len(prices_df) >= 2:
+                    recent_change = prices_df.iloc[-1]['price'] - prices_df.iloc[-2]['price']
+                    context['trends']['price_change'] = float(recent_change)
+                    context['trends']['price_direction'] = 'rising' if recent_change > 0 else 'falling'
+            
+            if not load_df.empty:
+                context['load_stats'] = {
+                    'current': float(load_df.iloc[-1]['load']),
+                    'mean': float(load_df['load'].mean()),
+                    'min': float(load_df['load'].min()),
+                    'max': float(load_df['load'].max()),
+                    'std': float(load_df['load'].std())
+                }
+                
+                # Calculate trend
+                if len(load_df) >= 2:
+                    recent_change = load_df.iloc[-1]['load'] - load_df.iloc[-2]['load']
+                    context['trends']['load_change'] = float(recent_change)
+                    context['trends']['load_direction'] = 'increasing' if recent_change > 0 else 'decreasing'
+            
+            return context
+            
+        except Exception as e:
+            return {
+                'country': country,
+                'data_available': False,
+                'error': str(e)
+            }
