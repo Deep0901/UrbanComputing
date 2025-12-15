@@ -12,6 +12,7 @@ from app.entsoe_client import ENTSOEClient
 from app.fuzzy_explainer import FuzzyExplainer
 from app.reason_extractor import ReasonExtractor
 from app.billing_analyzer import BillingAnalyzer
+from app.evaluation_manager import EvaluationManager
 
 st.set_page_config(
     page_title="Energy Price Explainability Dashboard",
@@ -87,6 +88,8 @@ if 'fuzzy_analysis' not in st.session_state:
     st.session_state.fuzzy_analysis = None
 if 'responses' not in st.session_state:
     st.session_state.responses = []
+if 'eval_manager' not in st.session_state:
+    st.session_state.eval_manager = EvaluationManager()
 
 # Title
 st.markdown('<h1 class="main-header">⚡ Energy Price & Consumption Explainability Dashboard</h1>', unsafe_allow_html=True)
@@ -696,112 +699,267 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
         
         st.divider()
         
-        # Student Evaluation Form
-        st.header("📝 Student Evaluation Form")
-        st.markdown("Please provide your feedback on the two explanation methods")
+        # ===== ENHANCED EVALUATION FORM =====
+        st.divider()
+        st.header("📝 Comparative Evaluation Form")
+        st.markdown("Help us improve by comparing the two explanation methods across multiple dimensions")
         
-        with st.form("evaluation_form"):
-            col1, col2 = st.columns(2)
+        eval_manager = st.session_state.eval_manager
+        
+        # Tabs for form and results
+        tab_form, tab_results = st.tabs(["📋 Evaluation", "📊 Analytics"])
+        
+        with tab_form:
+            st.markdown("### Method Comparison Questionnaire")
+            st.info("Rate each method on the dimensions below. This helps us understand which approach works better for different audiences.")
             
-            with col1:
-                participant_id = st.text_input(
-                    "Participant ID:",
-                    placeholder="e.g., Student_001"
-                )
-            
-            with col2:
-                preference = st.selectbox(
-                    "Which method do you prefer?",
-                    ["Select an option", "Method A (Numerical)", "Method B (Linguistic)", "Both Equally", "Neither"]
-                )
-            
-            st.markdown("#### Detailed Feedback")
-            
-            method_a_rating = st.slider(
-                "How helpful is Method A (Numerical)?",
-                min_value=1,
-                max_value=5,
-                value=3,
-                help="1 = Not helpful, 5 = Very helpful"
-            )
-            
-            method_b_rating = st.slider(
-                "How helpful is Method B (Linguistic)?",
-                min_value=1,
-                max_value=5,
-                value=3,
-                help="1 = Not helpful, 5 = Very helpful"
-            )
-            
-            understandability_a = st.slider(
-                "How easy to understand is Method A?",
-                min_value=1,
-                max_value=5,
-                value=3,
-                help="1 = Very difficult, 5 = Very easy"
-            )
-            
-            understandability_b = st.slider(
-                "How easy to understand is Method B?",
-                min_value=1,
-                max_value=5,
-                value=3,
-                help="1 = Very difficult, 5 = Very easy"
-            )
-            
-            comments = st.text_area(
-                "Additional Comments (Optional):",
-                placeholder="Please share any thoughts about the explanation methods..."
-            )
-            
-            submitted = st.form_submit_button("Submit Feedback", type="primary")
-            
-            if submitted:
-                if participant_id and preference != "Select an option":
-                    response = {
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'participant_id': participant_id,
-                        'preference': preference,
-                        'method_a_helpfulness': method_a_rating,
-                        'method_b_helpfulness': method_b_rating,
-                        'method_a_understandability': understandability_a,
-                        'method_b_understandability': understandability_b,
-                        'comments': comments,
-                        'data_source': st.session_state.data_source
-                    }
+            with st.form("evaluation_form", clear_on_submit=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    participant_id = st.text_input(
+                        "Participant ID:",
+                        placeholder="e.g., Student_001 or Expert_A01"
+                    )
+                
+                with col2:
+                    preference = st.selectbox(
+                        "Which method do you prefer overall?",
+                        ["Select an option", "Method A (Numerical)", "Method B (Linguistic)", "Both Equally", "Neither"]
+                    )
+                
+                st.markdown("---")
+                st.markdown("### Detailed Ratings (1 = Poor, 5 = Excellent)")
+                
+                # Create comparison cards
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    st.markdown("#### 📊 Method A: Numerical")
+                    st.markdown("*Statistical metrics, feature importance, prediction samples*")
                     
-                    st.session_state.responses.append(response)
-                    st.success("✅ Thank you! Your feedback has been recorded.")
-                    st.balloons()
-                else:
-                    st.error("⚠️ Please fill in Participant ID and select a preference.")
-        
-        # Export responses
-        if len(st.session_state.responses) > 0:
-            st.divider()
-            st.subheader("📊 Collected Responses")
-            
-            responses_df = pd.DataFrame(st.session_state.responses)
-            st.dataframe(responses_df)
-            
-            col1, col2, col3 = st.columns([2, 1, 1])
-            
-            with col1:
-                st.metric("Total Responses", len(st.session_state.responses))
-            
-            with col2:
-                csv = responses_df.to_csv(index=False)
-                st.download_button(
-                    "📥 Download CSV",
-                    data=csv,
-                    file_name=f"evaluation_responses_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
+                    method_a_helpfulness = st.slider(
+                        "Helpfulness",
+                        min_value=1, max_value=5, value=3,
+                        help="How helpful for understanding price drivers?",
+                        key="a_helpfulness"
+                    )
+                    
+                    method_a_understandability = st.slider(
+                        "Ease of Understanding",
+                        min_value=1, max_value=5, value=3,
+                        help="How easy to grasp the concepts?",
+                        key="a_understandability"
+                    )
+                    
+                    method_a_speed = st.slider(
+                        "Quick Comprehension",
+                        min_value=1, max_value=5, value=3,
+                        help="How quickly can you understand the main points?",
+                        key="a_speed"
+                    )
+                    
+                    method_a_practical = st.slider(
+                        "Practical Usefulness",
+                        min_value=1, max_value=5, value=3,
+                        help="How applicable to real-world decisions?",
+                        key="a_practical"
+                    )
+                
+                with col_b:
+                    st.markdown("#### 🗣️ Method B: Linguistic")
+                    st.markdown("*Natural language explanations with fuzzy reasoning*")
+                    
+                    method_b_helpfulness = st.slider(
+                        "Helpfulness",
+                        min_value=1, max_value=5, value=3,
+                        help="How helpful for understanding price drivers?",
+                        key="b_helpfulness"
+                    )
+                    
+                    method_b_understandability = st.slider(
+                        "Ease of Understanding",
+                        min_value=1, max_value=5, value=3,
+                        help="How easy to grasp the concepts?",
+                        key="b_understandability"
+                    )
+                    
+                    method_b_speed = st.slider(
+                        "Quick Comprehension",
+                        min_value=1, max_value=5, value=3,
+                        help="How quickly can you understand the main points?",
+                        key="b_speed"
+                    )
+                    
+                    method_b_practical = st.slider(
+                        "Practical Usefulness",
+                        min_value=1, max_value=5, value=3,
+                        help="How applicable to real-world decisions?",
+                        key="b_practical"
+                    )
+                
+                st.markdown("---")
+                
+                comments = st.text_area(
+                    "📝 Additional Comments (Optional):",
+                    placeholder="Share any observations, suggestions, or detailed feedback about either method...",
+                    height=100
                 )
+                
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col1:
+                    submitted = st.form_submit_button("✅ Submit Evaluation", type="primary")
+                with col2:
+                    st.form_submit_button("Reset Form")
+                
+                if submitted:
+                    if not participant_id or preference == "Select an option":
+                        st.error("⚠️ Please fill in Participant ID and select a preference.")
+                    else:
+                        response = {
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'participant_id': participant_id,
+                            'preference': preference,
+                            'method_a_helpfulness': method_a_helpfulness,
+                            'method_b_helpfulness': method_b_helpfulness,
+                            'method_a_understandability': method_a_understandability,
+                            'method_b_understandability': method_b_understandability,
+                            'method_a_speed': method_a_speed,
+                            'method_b_speed': method_b_speed,
+                            'method_a_practical': method_a_practical,
+                            'method_b_practical': method_b_practical,
+                            'comments': comments,
+                            'data_source': st.session_state.data_source
+                        }
+                        
+                        # Save to database
+                        if eval_manager.save_response(response):
+                            st.success("✅ Thank you! Your evaluation has been recorded.")
+                            st.balloons()
+                        else:
+                            st.error("❌ Error saving your response. Please try again.")
+        
+        with tab_results:
+            st.markdown("### 📊 Evaluation Results & Analytics")
             
-            with col3:
-                if st.button("🗑️ Clear Responses"):
-                    st.session_state.responses = []
-                    st.rerun()
+            responses_df = eval_manager.get_all_responses()
+            total_count = eval_manager.get_response_count()
+            
+            if total_count > 0:
+                st.success(f"✅ {total_count} evaluation(s) collected")
+                
+                # Key metrics
+                analytics = eval_manager.get_analytics()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        "Total Evaluations",
+                        total_count
+                    )
+                
+                with col2:
+                    method_a_avg = analytics['method_a_avg_helpfulness']
+                    st.metric(
+                        "Method A Avg Helpfulness",
+                        f"{method_a_avg:.2f}/5",
+                        f"{(method_a_avg/5)*100:.0f}%"
+                    )
+                
+                with col3:
+                    method_b_avg = analytics['method_b_avg_helpfulness']
+                    st.metric(
+                        "Method B Avg Helpfulness",
+                        f"{method_b_avg:.2f}/5",
+                        f"{(method_b_avg/5)*100:.0f}%"
+                    )
+                
+                with col4:
+                    preference_data = analytics['preference_counts']
+                    most_preferred = max(preference_data, key=preference_data.get) if preference_data else "N/A"
+                    st.metric(
+                        "Most Preferred",
+                        most_preferred.split('(')[0].strip()
+                    )
+                
+                st.divider()
+                
+                # Comparison charts
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### Average Ratings Comparison")
+                    comparison_data = pd.DataFrame({
+                        'Dimension': ['Helpfulness', 'Understandability', 'Speed', 'Practical'],
+                        'Method A': [
+                            analytics['method_a_avg_helpfulness'],
+                            analytics['method_a_avg_understandability'],
+                            analytics['method_a_avg_speed'],
+                            analytics['method_a_avg_practical']
+                        ],
+                        'Method B': [
+                            analytics['method_b_avg_helpfulness'],
+                            analytics['method_b_avg_understandability'],
+                            analytics['method_b_avg_speed'],
+                            analytics['method_b_avg_practical']
+                        ]
+                    })
+                    st.bar_chart(comparison_data.set_index('Dimension'))
+                
+                with col2:
+                    st.markdown("#### Preference Distribution")
+                    if 'preference_counts' in analytics and analytics['preference_counts']:
+                        pref_df = pd.DataFrame(
+                            list(analytics['preference_counts'].items()),
+                            columns=['Preference', 'Count']
+                        )
+                        st.bar_chart(pref_df.set_index('Preference'))
+                    else:
+                        st.info("No preference data available yet")
+                
+                st.divider()
+                
+                # Data table
+                st.markdown("#### Raw Responses")
+                st.dataframe(
+                    responses_df[['timestamp', 'participant_id', 'preference', 
+                                  'method_a_helpfulness', 'method_b_helpfulness',
+                                  'comments']],
+                    use_container_width=True
+                )
+                
+                # Export options
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    csv_data = responses_df.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download as CSV",
+                        data=csv_data,
+                        file_name=f"evaluations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                
+                with col2:
+                    json_data = responses_df.to_json(indent=2, orient='records')
+                    st.download_button(
+                        "📥 Download as JSON",
+                        data=json_data,
+                        file_name=f"evaluations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json"
+                    )
+                
+                with col3:
+                    if st.button("🗑️ Clear All Responses", type="secondary"):
+                        if eval_manager.delete_all_responses():
+                            st.success("All responses cleared!")
+                            st.rerun()
+                        else:
+                            st.error("Error clearing responses")
+                
+            else:
+                st.info("📭 No evaluations collected yet. Fill out the evaluation form to get started!")
 
     else:
         # Instructions when model not trained
