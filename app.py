@@ -885,29 +885,43 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
                 
                 st.divider()
                 
-                # Comparison charts
+                # Detailed Comparison Charts
+                st.markdown("#### 📊 Detailed Methods Comparison")
+                
+                comparison_data = pd.DataFrame({
+                    'Dimension': ['Helpfulness', 'Understandability', 'Speed', 'Practical'],
+                    'Method A': [
+                        analytics['method_a_avg_helpfulness'],
+                        analytics['method_a_avg_understandability'],
+                        analytics['method_a_avg_speed'],
+                        analytics['method_a_avg_practical']
+                    ],
+                    'Method B': [
+                        analytics['method_b_avg_helpfulness'],
+                        analytics['method_b_avg_understandability'],
+                        analytics['method_b_avg_speed'],
+                        analytics['method_b_avg_practical']
+                    ]
+                })
+                
+                # Create custom comparison visualization
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.bar_chart(comparison_data.set_index('Dimension'), height=400)
+                
+                with col2:
+                    st.markdown("**Interpretation:**")
+                    for idx, row in comparison_data.iterrows():
+                        winner = "🟢 Method A" if row['Method A'] > row['Method B'] else "🔵 Method B" if row['Method B'] > row['Method A'] else "⚪ Tie"
+                        st.markdown(f"**{row['Dimension']}:** {winner}")
+                
+                st.divider()
+                
+                # Preference and additional charts
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("#### Average Ratings Comparison")
-                    comparison_data = pd.DataFrame({
-                        'Dimension': ['Helpfulness', 'Understandability', 'Speed', 'Practical'],
-                        'Method A': [
-                            analytics['method_a_avg_helpfulness'],
-                            analytics['method_a_avg_understandability'],
-                            analytics['method_a_avg_speed'],
-                            analytics['method_a_avg_practical']
-                        ],
-                        'Method B': [
-                            analytics['method_b_avg_helpfulness'],
-                            analytics['method_b_avg_understandability'],
-                            analytics['method_b_avg_speed'],
-                            analytics['method_b_avg_practical']
-                        ]
-                    })
-                    st.bar_chart(comparison_data.set_index('Dimension'))
-                
-                with col2:
                     st.markdown("#### Preference Distribution")
                     if 'preference_counts' in analytics and analytics['preference_counts']:
                         pref_df = pd.DataFrame(
@@ -918,10 +932,56 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
                     else:
                         st.info("No preference data available yet")
                 
+                with col2:
+                    st.markdown("#### Data Source Distribution")
+                    if 'data_source_counts' in analytics and analytics['data_source_counts']:
+                        source_df = pd.DataFrame(
+                            list(analytics['data_source_counts'].items()),
+                            columns=['Data Source', 'Count']
+                        )
+                        st.bar_chart(source_df.set_index('Data Source'))
+                    else:
+                        st.info("No data source info available")
+                
+                st.divider()
+                
+                # Participant Comments Section
+                st.markdown("#### 💬 Participant Feedback & Comments")
+                
+                # Filter comments
+                comments_df = responses_df[responses_df['comments'].notna() & (responses_df['comments'] != '')]
+                
+                if len(comments_df) > 0:
+                    st.info(f"📝 {len(comments_df)} participant(s) provided comments")
+                    
+                    # Display comments in a nice format
+                    for idx, row in comments_df.iterrows():
+                        with st.expander(f"💭 {row['participant_id']} - {row['timestamp']} - Prefers: {row['preference']}"):
+                            st.markdown(f"**Participant:** {row['participant_id']}")
+                            st.markdown(f"**Timestamp:** {row['timestamp']}")
+                            st.markdown(f"**Preference:** {row['preference']}")
+                            st.markdown(f"**Ratings:**")
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.markdown(f"- Method A Helpfulness: **{row['method_a_helpfulness']}/5**")
+                                st.markdown(f"- Method A Understandability: **{row['method_a_understandability']}/5**")
+                                st.markdown(f"- Method A Speed: **{row['method_a_speed']}/5**")
+                                st.markdown(f"- Method A Practical: **{row['method_a_practical']}/5**")
+                            with col_b:
+                                st.markdown(f"- Method B Helpfulness: **{row['method_b_helpfulness']}/5**")
+                                st.markdown(f"- Method B Understandability: **{row['method_b_understandability']}/5**")
+                                st.markdown(f"- Method B Speed: **{row['method_b_speed']}/5**")
+                                st.markdown(f"- Method B Practical: **{row['method_b_practical']}/5**")
+                            st.divider()
+                            st.markdown("**📝 Comment:**")
+                            st.info(row['comments'])
+                else:
+                    st.info("No comments provided yet")
+                
                 st.divider()
                 
                 # Data table
-                st.markdown("#### Raw Responses")
+                st.markdown("#### All Responses (Raw Data)")
                 st.dataframe(
                     responses_df[['timestamp', 'participant_id', 'preference', 
                                   'method_a_helpfulness', 'method_b_helpfulness',
