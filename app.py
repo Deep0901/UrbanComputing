@@ -841,10 +841,10 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
         """)
 
 # Footer
-st.divider()
-st.markdown("""
-<div style='text-align: center; color: #666; padding: 1rem;'>
-    <p>⚡ Energy Price & Consumption Explainability Dashboard | Dual Explanation System Research Tool</p>
-    <p><small>Powered by Scikit-learn, Scikit-fuzzy, and ENTSOE Transparency Platform API</small></p>
-</div>
-""", unsafe_allow_html=True)
+# st.divider()
+# st.markdown("""
+# <div style='text-align: center; color: #666; padding: 1rem;'>
+#     <p>⚡ Energy Price & Consumption Explainability Dashboard | Dual Explanation System Research Tool</p>
+#     <p><small>Powered by Scikit-learn, Scikit-fuzzy, and ENTSOE Transparency Platform API</small></p>
+# </div>
+# """, unsafe_allow_html=True)
