@@ -401,31 +401,35 @@ if main_mode == "💰 Bill Analysis & Optimization":
         tab_a, tab_b = st.tabs(["📊 Method A (Numerical)", "🗣️ Method B (Linguistic)"])
 
         with tab_a:
-            st.markdown("**What you see:** precise numbers for costs and usage")
+            st.markdown("**What you see:** dense numerical decomposition and cost engineering view")
+            st.markdown(
+                "Using a granular allocation, total cost can be expressed as: "
+                "$C = E_p \, r_p + E_o \, r_o + F + T$, where $E_p$/$E_o$ are peak/off-peak kWh, $r_p$/$r_o$ are tariffs, $F$ fixed charges, $T$ tax."
+            )
             col_a1, col_a2, col_a3 = st.columns(3)
             with col_a1:
-                st.metric("Cost / kWh", f"€{analysis['cost_per_unit']:.3f}")
+                st.metric("Levelized Cost (LCU)", f"€{analysis['cost_per_unit']:.3f}/kWh")
             with col_a2:
-                st.metric("Peak vs Off-Peak", f"{analysis['peak_units']/analysis['estimated_units']*100:.0f}% / {analysis['off_peak_units']/analysis['estimated_units']*100:.0f}%")
+                st.metric("Peak Share", f"{analysis['peak_units']/analysis['estimated_units']*100:.0f}% of energy")
             with col_a3:
-                st.metric("Daily Avg", f"{analysis['daily_units']:.1f} kWh")
+                st.metric("Duty Cycle", f"{analysis['daily_units']:.1f} kWh/day")
 
-            st.markdown("**Top drivers (numbers):**")
-            st.markdown(f"- Peak energy cost: €{analysis['peak_charges']:.2f} at €{analysis['rates']['peak_rate']:.3f}/kWh")
-            st.markdown(f"- Off-peak cost: €{analysis['off_peak_charges']:.2f} at €{analysis['rates']['off_peak_rate']:.3f}/kWh")
-            st.markdown(f"- Fixed charges + tax: €{analysis['fixed_charges'] + analysis['tax_amount']:.2f}")
+            st.markdown("**Driver stack (numeric):**")
+            st.markdown(f"- Peak cost vector: **€{analysis['peak_charges']:.2f}** at **€{analysis['rates']['peak_rate']:.3f}/kWh** → dominant marginal component")
+            st.markdown(f"- Off-peak component: **€{analysis['off_peak_charges']:.2f}** at **€{analysis['rates']['off_peak_rate']:.3f}/kWh**")
+            st.markdown(f"- Non-energy overhead (F+T): **€{analysis['fixed_charges'] + analysis['tax_amount']:.2f}** reducing elasticity of savings")
+            st.markdown("- Sensitivity: shifting 10% of peak to off-peak reduces blended LCU proportionally to the tariff differential.")
 
         with tab_b:
             st.markdown("**What you see:** natural language, plain-English takeaway")
             st.info(
-                f"Your bill of €{analysis['total_bill']:.2f} suggests about {analysis['estimated_units']:.0f} kWh this month. "
-                f"Roughly {analysis['peak_units']/analysis['estimated_units']*100:.0f}% happens during peak hours, which raises the average price to €{analysis['cost_per_unit']:.3f}/kWh. "
-                f"If you shift even part of that peak usage off-peak, the savings could be meaningful."
+                f"Your bill of €{analysis['total_bill']:.2f} likely comes from about {analysis['estimated_units']:.0f} kWh. "
+                f"Around {analysis['peak_units']/analysis['estimated_units']*100:.0f}% happens in expensive peak hours; moving some of that to cheaper off-peak hours can lower the average price."
             )
             st.markdown("**Plain-language highlights:**")
-            st.markdown("- Peak-time use is the expensive part; consider shifting laundry/HVAC away from peaks.")
-            st.markdown("- Fixed + tax portion limits savings, but usage timing still matters.")
-            st.markdown("- Compare against your household benchmark: aim near 300 kWh/month if feasible.")
+            st.markdown("- Peak-time use is the costly part; run big appliances outside peak when possible.")
+            st.markdown("- Fixed and tax portions stay the same, but timing changes can still trim the energy part.")
+            st.markdown("- If you’re far above a ~300 kWh/month benchmark, focus on trimming peak-heavy loads first.")
             
         # Savings calculator
         with st.expander("💰 Potential Savings Calculator", expanded=True):
