@@ -395,6 +395,37 @@ if main_mode == "💰 Bill Analysis & Optimization":
                 st.markdown(f"- {rec}")
         
         st.divider()
+
+        # Dual explanation system for billing
+        st.subheader("🧭 Dual Explanation: Numerical vs Linguistic")
+        tab_a, tab_b = st.tabs(["📊 Method A (Numerical)", "🗣️ Method B (Linguistic)"])
+
+        with tab_a:
+            st.markdown("**What you see:** precise numbers for costs and usage")
+            col_a1, col_a2, col_a3 = st.columns(3)
+            with col_a1:
+                st.metric("Cost / kWh", f"€{analysis['cost_per_unit']:.3f}")
+            with col_a2:
+                st.metric("Peak vs Off-Peak", f"{analysis['peak_units']/analysis['estimated_units']*100:.0f}% / {analysis['off_peak_units']/analysis['estimated_units']*100:.0f}%")
+            with col_a3:
+                st.metric("Daily Avg", f"{analysis['daily_units']:.1f} kWh")
+
+            st.markdown("**Top drivers (numbers):**")
+            st.markdown(f"- Peak energy cost: €{analysis['peak_charges']:.2f} at €{analysis['rates']['peak_rate']:.3f}/kWh")
+            st.markdown(f"- Off-peak cost: €{analysis['off_peak_charges']:.2f} at €{analysis['rates']['off_peak_rate']:.3f}/kWh")
+            st.markdown(f"- Fixed charges + tax: €{analysis['fixed_charges'] + analysis['tax_amount']:.2f}")
+
+        with tab_b:
+            st.markdown("**What you see:** natural language, plain-English takeaway")
+            st.info(
+                f"Your bill of €{analysis['total_bill']:.2f} suggests about {analysis['estimated_units']:.0f} kWh this month. "
+                f"Roughly {analysis['peak_units']/analysis['estimated_units']*100:.0f}% happens during peak hours, which raises the average price to €{analysis['cost_per_unit']:.3f}/kWh. "
+                f"If you shift even part of that peak usage off-peak, the savings could be meaningful."
+            )
+            st.markdown("**Plain-language highlights:**")
+            st.markdown("- Peak-time use is the expensive part; consider shifting laundry/HVAC away from peaks.")
+            st.markdown("- Fixed + tax portion limits savings, but usage timing still matters.")
+            st.markdown("- Compare against your household benchmark: aim near 300 kWh/month if feasible.")
             
         # Savings calculator
         with st.expander("💰 Potential Savings Calculator", expanded=True):
