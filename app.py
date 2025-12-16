@@ -608,7 +608,7 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
         # Add realistic time series visualization
         st.header("📈 Energy Market Time Series")
         
-        tab1, tab2, tab3 = st.tabs(["Price Patterns", "Load Profiles", "Price-Load Relationship"])
+        tab1, tab2 = st.tabs(["Price Patterns", "Load Profiles"])
         
         with tab1:
             st.markdown("### Electricity Price Over Time")
@@ -659,22 +659,6 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
                     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
                     daily_avg = df_temp.groupby('day')['energy_consumption'].mean().reindex(day_order)
                     st.bar_chart(daily_avg)
-        
-            with tab3:
-                st.markdown("### Price-Load Correlation")
-                scatter_df = st.session_state.df[['energy_consumption', 'price']].copy()
-                scatter_df.columns = ['Load (MW)', 'Price (€/MWh)']
-                st.scatter_chart(scatter_df, x='Load (MW)', y='Price (€/MWh)')
-            
-            correlation = st.session_state.df['energy_consumption'].corr(st.session_state.df['price'])
-            st.metric("Pearson Correlation", f"{correlation:.3f}")
-            
-            if abs(correlation) > 0.7:
-                st.success("✅ Strong correlation: Price heavily influenced by demand")
-            elif abs(correlation) > 0.4:
-                st.info("ℹ️ Moderate correlation: Price partially driven by demand")
-            else:
-                st.warning("⚠️ Weak correlation: Other factors may dominate pricing")
         
         st.divider()
         
