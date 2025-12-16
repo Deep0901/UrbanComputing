@@ -242,7 +242,8 @@ with st.sidebar:
 
 # ===== BILLING ANALYSIS MODULE =====
 if main_mode == "💰 Bill Analysis & Optimization":
-    st.header("💰 Electricity Bill Analysis & Optimization")
+    st.header("💰 Swiss Electricity Bill Analysis")
+    st.caption("Analyze your electricity bill with Swiss tariff structure (CHF). Based on ElCom 2024 average rates.")
     
     # Initialize session state for billing analysis
     if 'billing_analysis' not in st.session_state:
@@ -252,187 +253,259 @@ if main_mode == "💰 Bill Analysis & Optimization":
     
     analyzer = BillingAnalyzer()
     
+    # User Input Section
     col1, col2 = st.columns([2, 1])
     
     with col1:
         st.subheader("📋 Enter Your Bill Information")
         
         bill_amount = st.number_input(
-            "Total Monthly Bill Amount (€):",
+            "Monthly Bill Amount (CHF):",
             min_value=0.0,
             max_value=10000.0,
-            value=100.0,
+            value=120.0,
             step=5.0,
-            help="Enter your total electricity bill for the month"
+            help="Enter your total electricity bill for the month in Swiss Francs"
         )
         
-        rate_structure = st.selectbox(
-            "Select Your Rate Plan:",
-            ["Residential - Standard", "Residential - Time-of-Use", "Commercial"],
-            help="Choose your electricity rate structure"
-        )
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            know_units = st.checkbox("I know my consumption (kWh)")
-        
-        units_consumed = None
-        if know_units:
-            with col_b:
-                units_consumed = st.number_input(
-                    "Total Units Consumed (kWh):",
-                    min_value=0.0,
-                    value=300.0,
-                    step=10.0
-                )
+        col_opt1, col_opt2 = st.columns(2)
+        with col_opt1:
+            canton = st.selectbox(
+                "City / Canton (optional):",
+                ["Other", "Zürich", "Bern", "Geneva", "Basel", "Lausanne"],
+                help="Regional rates vary; select your area for better estimates"
+            )
+        with col_opt2:
+            household_size = st.selectbox(
+                "Household Size (optional):",
+                ["4 persons", "1 person", "2 persons", "3 persons", "5+ persons"],
+                help="Used for comparison with average consumption"
+            )
     
     with col2:
         st.info("""
-        **How it works:**
+        **What you'll see:**
         
-        Enter your monthly bill amount and we'll analyze:
-        - Estimated consumption
-        - Cost breakdown
-        - Usage patterns
-        - Optimization opportunities
-        - Potential savings
+        ✅ Estimated monthly kWh  
+        ✅ Cost breakdown (energy, grid, taxes, fixed, VAT)  
+        ✅ Why each cost exists  
+        ✅ % share of each component  
+        ✅ Comparison with average household  
+        ✅ Assumptions used  
         """)
     
-    if st.button("🔍 Analyze My Bill", type="primary", use_container_width=True):
+    if st.button("🔍 Analyze My Bill", type="primary"):
         with st.spinner("Analyzing your electricity bill..."):
-            st.session_state.billing_analysis = analyzer.analyze_bill(bill_amount, rate_structure, units_consumed)
+            st.session_state.billing_analysis = analyzer.analyze_bill(
+                bill_amount,
+                canton=canton,
+                household_size=household_size,
+            )
             st.session_state.billing_params = {
                 'bill_amount': bill_amount,
-                'rate_structure': rate_structure,
-                'units_consumed': units_consumed
+                'canton': canton,
+                'household_size': household_size,
             }
     
     # Display analysis if available
     if st.session_state.billing_analysis is not None:
         analysis = st.session_state.billing_analysis
-        bill_amount = st.session_state.billing_params['bill_amount']
-        rate_structure = st.session_state.billing_params['rate_structure']
         
         st.success("✅ Analysis Complete!")
-            
-        # Main metrics
-        st.subheader("📊 Bill Breakdown")
-        col1, col2, col3, col4 = st.columns(4)
-            
+        
+        # ===== ESTIMATED CONSUMPTION =====
+        st.subheader("⚡ Estimated Consumption")
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Bill", f"€{analysis['total_bill']:.2f}")
+            st.metric("Estimated Monthly Usage", f"{analysis['estimated_kwh']:.0f} kWh")
         with col2:
-            st.metric("Estimated Units", f"{analysis['estimated_units']:.1f} kWh")
+            st.metric("Average CHF per kWh", f"CHF {analysis['avg_chf_per_kwh']:.4f}")
         with col3:
-            st.metric("Cost per kWh", f"€{analysis['cost_per_unit']:.3f}")
-        with col4:
-            st.metric("Daily Cost", f"€{analysis['daily_cost']:.2f}")
+            st.metric("Daily Average", f"{analysis['estimated_kwh']/30:.1f} kWh/day")
         
         st.divider()
-            
-        # Detailed breakdown
-        col1, col2 = st.columns(2)
+        
+        # ===== COST BREAKDOWN =====
+        st.subheader("💰 Cost Breakdown")
+        
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            st.subheader("💡 Consumption Details")
-                
-            st.markdown(f"""
-            **Peak Hours Usage** (6 AM - 10 PM)
-            - Units: **{analysis['peak_units']:.1f} kWh** ({analysis['peak_units']/analysis['estimated_units']*100:.0f}%)
-            - Cost: **€{analysis['peak_charges']:.2f}**
-            - Rate: **€{analysis['rates']['peak_rate']:.3f}/kWh**
-            
-            **Off-Peak Usage** (10 PM - 6 AM)
-            - Units: **{analysis['off_peak_units']:.1f} kWh** ({analysis['off_peak_units']/analysis['estimated_units']*100:.0f}%)
-            - Cost: **€{analysis['off_peak_charges']:.2f}**
-            - Rate: **€{analysis['rates']['off_peak_rate']:.3f}/kWh**
-            
-            **Daily Average:** {analysis['daily_units']:.1f} kWh/day
-            **Hourly Average:** {analysis['hourly_units']:.2f} kWh/hour
-            """)
-        
-        with col2:
-            st.subheader("💰 Cost Breakdown")
-                
-            # Create breakdown chart data
             breakdown_data = pd.DataFrame({
-                'Component': ['Peak Energy', 'Off-Peak Energy', 'Fixed Charges', 'Taxes'],
-                'Amount (€)': [
-                    analysis['peak_charges'],
-                    analysis['off_peak_charges'],
-                    analysis['fixed_charges'],
-                    analysis['tax_amount']
+                'Component': ['Energy Cost', 'Grid/Network Charges', 'Taxes & Levies', 'Fixed Monthly Charge', 'VAT (8.1%)'],
+                'Amount (CHF)': [
+                    analysis['energy_cost'],
+                    analysis['grid_cost'],
+                    analysis['taxes_levies'],
+                    analysis['fixed_monthly'],
+                    analysis['vat_amount']
+                ],
+                'Share (%)': [
+                    analysis['pct_energy'],
+                    analysis['pct_grid'],
+                    analysis['pct_taxes'],
+                    analysis['pct_fixed'],
+                    analysis['pct_vat']
                 ]
             })
-            
-            st.dataframe(breakdown_data, hide_index=True, use_container_width=True)
+            st.dataframe(breakdown_data, hide_index=True)
             
             st.markdown(f"""
-            **Subtotal:** €{analysis['energy_charges'] + analysis['fixed_charges']:.2f}
-            **Tax ({analysis['rates']['tax_rate']*100:.0f}%):** €{analysis['tax_amount']:.2f}
-            **Total:** €{analysis['total_bill']:.2f}
-            """)
-        
-        st.divider()
-            
-        # Insights
-        st.subheader("🔍 Insights & Analysis")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"""
-            **{analysis['insights']['consumption_level']}**
-            
-            **{analysis['insights']['cost_efficiency']}**
-            
-            **{analysis['insights']['comparison']}**
+            **Total (calculated):** CHF {analysis['total_calculated']:.2f}  
+            **Your entered bill:** CHF {analysis['total_bill']:.2f}
             """)
         
         with col2:
-            st.markdown("**💡 Recommendations:**")
-            for rec in analysis['insights']['recommendations']:
-                st.markdown(f"- {rec}")
+            # Percentage pie visualization
+            st.markdown("**Percentage Split**")
+            pct_data = pd.DataFrame({
+                'Component': ['Energy', 'Grid', 'Taxes/Levies', 'Fixed', 'VAT'],
+                'Percent': [
+                    analysis['pct_energy'],
+                    analysis['pct_grid'],
+                    analysis['pct_taxes'],
+                    analysis['pct_fixed'],
+                    analysis['pct_vat']
+                ]
+            })
+            st.bar_chart(pct_data.set_index('Component'))
+        
+        st.divider()
+        
+        # ===== REASON EXPLANATIONS =====
+        st.subheader("📖 Why These Costs Exist")
+        
+        reasons = analysis['reasons']
+        
+        with st.expander("🔌 Grid / Network Charges", expanded=True):
+            st.markdown(reasons['grid_fees'])
+        
+        with st.expander("🏠 Fixed Monthly Charges", expanded=True):
+            st.markdown(reasons['fixed_costs'])
+        
+        if reasons.get('high_bill_low_usage'):
+            with st.expander("❓ Why Bill Can Be High Even With Low Usage", expanded=True):
+                st.markdown(reasons['high_bill_low_usage'])
+        
+        with st.expander("❄️ Seasonal Effects", expanded=False):
+            st.markdown(reasons['seasonal'])
+        
+        with st.expander("📍 Regional Effects", expanded=False):
+            st.markdown(reasons['regional'])
+        
+        st.divider()
+        
+        # ===== COMPARISON =====
+        st.subheader("📊 Comparison with Average Household")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            delta_kwh = f"{analysis['diff_kwh_pct']:+.0f}%" if analysis['diff_kwh_pct'] != 0 else "same"
+            st.metric(
+                "Your Usage vs Average",
+                f"{analysis['estimated_kwh']:.0f} kWh",
+                delta=delta_kwh,
+                delta_color="inverse"
+            )
+        with col2:
+            st.metric(
+                f"Average ({analysis['household_size']})",
+                f"{analysis['avg_kwh']} kWh/mo"
+            )
+        with col3:
+            delta_bill = f"{analysis['diff_bill_pct']:+.0f}%" if analysis['diff_bill_pct'] != 0 else "same"
+            st.metric(
+                "Your Bill vs Average",
+                f"CHF {analysis['total_bill']:.2f}",
+                delta=delta_bill,
+                delta_color="inverse"
+            )
+        
+        # Comparison bar
+        comparison_df = pd.DataFrame({
+            'Category': ['Your Bill', 'Average Household'],
+            'Amount (CHF)': [analysis['total_bill'], analysis['avg_bill']]
+        })
+        st.bar_chart(comparison_df.set_index('Category'))
+        
+        st.divider()
+        
+        # ===== ASSUMPTIONS NOTICE =====
+        st.subheader("📝 Assumptions Used")
+        st.info(analysis['assumptions'])
         
         st.divider()
 
-        # Dual explanation system for billing
-        st.subheader("🧭 Dual Explanation: Numerical vs Linguistic")
+        # ===== DUAL EXPLANATION SYSTEM =====
+        st.subheader("🧭 Dual Explanation: Numerical vs Linguistic Language")
         tab_a, tab_b = st.tabs(["📊 Method A (Numerical)", "🗣️ Method B (Linguistic)"])
 
         with tab_a:
-            st.markdown("**What you see:** dense numerical decomposition and cost engineering view")
+            st.markdown("**What you see:** Regulator-grade breakdown with formulas and line items (dense on purpose)")
+            
             st.markdown(
-                "Using a granular allocation, total cost can be expressed as: "
-                "$C = E_p \, r_p + E_o \, r_o + F + T$, where $E_p$/$E_o$ are peak/off-peak kWh, $r_p$/$r_o$ are tariffs, $F$ fixed charges, $T$ tax."
+                "**Bill formula:** `Total = (kWh × (Energy + Grid + Taxes/Levies) + Fixed) × (1 + VAT)`"
             )
-            col_a1, col_a2, col_a3 = st.columns(3)
-            with col_a1:
-                st.metric("Levelized Cost (LCU)", f"€{analysis['cost_per_unit']:.3f}/kWh")
-            with col_a2:
-                st.metric("Peak Share", f"{analysis['peak_units']/analysis['estimated_units']*100:.0f}% of energy")
-            with col_a3:
-                st.metric("Duty Cycle", f"{analysis['daily_units']:.1f} kWh/day")
-
-            st.markdown("**Driver stack (numeric):**")
-            st.markdown(f"- Peak cost vector: **€{analysis['peak_charges']:.2f}** at **€{analysis['rates']['peak_rate']:.3f}/kWh** → dominant marginal component")
-            st.markdown(f"- Off-peak component: **€{analysis['off_peak_charges']:.2f}** at **€{analysis['rates']['off_peak_rate']:.3f}/kWh**")
-            st.markdown(f"- Non-energy overhead (F+T): **€{analysis['fixed_charges'] + analysis['tax_amount']:.2f}** reducing elasticity of savings")
-            st.markdown("- Sensitivity: shifting 10% of peak to off-peak reduces blended LCU proportionally to the tariff differential.")
+            st.markdown(
+                f"- Variable rate: CHF {analysis['rates']['energy_rate']:.4f} + {analysis['rates']['grid_rate']:.4f} + {analysis['rates']['taxes_levies_rate']:.4f} = **CHF {(analysis['rates']['energy_rate']+analysis['rates']['grid_rate']+analysis['rates']['taxes_levies_rate']):.4f}/kWh**"
+            )
+            st.markdown(f"- Fixed component: **CHF {analysis['rates']['fixed_monthly']:.2f}/month**")
+            st.markdown(f"- VAT rate: **{analysis['rates']['vat_rate']*100:.1f}%**")
+            
+            st.markdown("---")
+            st.markdown("### Component Details")
+            st.markdown(f"""
+            | Component | Rate | Your Cost | Share |
+            |-----------|------|-----------|-------|
+            | Energy (electricity used) | CHF {analysis['rates']['energy_rate']:.4f}/kWh | CHF {analysis['energy_cost']:.2f} | {analysis['pct_energy']:.1f}% |
+            | Grid/Network charges | CHF {analysis['rates']['grid_rate']:.4f}/kWh | CHF {analysis['grid_cost']:.2f} | {analysis['pct_grid']:.1f}% |
+            | Taxes & Levies (KEV, SDL) | CHF {analysis['rates']['taxes_levies_rate']:.4f}/kWh | CHF {analysis['taxes_levies']:.2f} | {analysis['pct_taxes']:.1f}% |
+            | Fixed monthly charge | CHF {analysis['rates']['fixed_monthly']:.2f}/mo | CHF {analysis['fixed_monthly']:.2f} | {analysis['pct_fixed']:.1f}% |
+            | VAT | {analysis['rates']['vat_rate']*100:.1f}% | CHF {analysis['vat_amount']:.2f} | {analysis['pct_vat']:.1f}% |
+            """)
+            
+            st.markdown("---")
+            st.markdown("### Regulatory Notes")
+            st.markdown("- Energy prices set by supplier; grid charges regulated by ElCom")
+            st.markdown("- KEV (Kostendeckende Einspeisevergütung) supports renewable energy")
+            st.markdown("- SDL (Systemdienstleistungen) covers Swissgrid system services")
+            st.markdown("- Regional multipliers reflect local utility infrastructure costs")
 
         with tab_b:
-            st.markdown("**What you see:** natural language, plain-English takeaway")
-            st.info(
-                f"Your bill of €{analysis['total_bill']:.2f} likely comes from about {analysis['estimated_units']:.0f} kWh. "
-                f"Around {analysis['peak_units']/analysis['estimated_units']*100:.0f}% happens in expensive peak hours; moving some of that to cheaper off-peak hours can lower the average price."
-            )
-            st.markdown("**Plain-language highlights:**")
-            st.markdown("- Peak-time use is the costly part; run big appliances outside peak when possible.")
-            st.markdown("- Fixed and tax portions stay the same, but timing changes can still trim the energy part.")
-            st.markdown("- If you’re far above a ~300 kWh/month benchmark, focus on trimming peak-heavy loads first.")
+            st.markdown("**What you see:** Simple, plain-language explanation")
             
-        # Savings calculator
+            st.info(
+                f"Your monthly bill of **CHF {analysis['total_bill']:.2f}** covers about **{analysis['estimated_kwh']:.0f} kWh** of electricity. "
+                f"That works out to roughly **CHF {analysis['avg_chf_per_kwh']:.2f} per kWh** all-in."
+            )
+            
+            st.markdown("### Where your money goes:")
+            st.markdown(f"- 🔌 **{analysis['pct_energy']:.0f}%** pays for the actual electricity you used")
+            st.markdown(f"- 🌐 **{analysis['pct_grid']:.0f}%** pays for the power grid (poles, cables, maintenance)")
+            st.markdown(f"- 🏛️ **{analysis['pct_taxes']:.0f}%** goes to government taxes and renewable energy support")
+            st.markdown(f"- 📋 **{analysis['pct_fixed']:.0f}%** is a fixed monthly fee (you pay this even if you use zero electricity)")
+            st.markdown(f"- 💵 **{analysis['pct_vat']:.0f}%** is VAT")
+            
+            st.markdown("### Key takeaways:")
+            if analysis['diff_kwh_pct'] > 20:
+                st.warning(f"⚠️ You use about {analysis['diff_kwh_pct']:.0f}% more than a typical {analysis['household_size']} household. Look for energy-saving opportunities!")
+            elif analysis['diff_kwh_pct'] < -20:
+                st.success(f"✅ Great job! You use about {abs(analysis['diff_kwh_pct']):.0f}% less than average.")
+            else:
+                st.info("📊 Your usage is close to average for your household size.")
+            
+            st.markdown("### Simple tips to save:")
+            st.markdown("- 💡 Switch to LED bulbs")
+            st.markdown("- 🔌 Unplug devices when not in use")
+            st.markdown("- 🌡️ Lower heating by 1°C (saves ~6% heating cost)")
+            st.markdown("- 🧺 Wash laundry at 30°C instead of 60°C")
+            
+        # ===== SAVINGS CALCULATOR =====
         with st.expander("💰 Potential Savings Calculator", expanded=True):
+            bill_amount = st.session_state.billing_params['bill_amount']
+            canton = st.session_state.billing_params['canton']
+            household_size = st.session_state.billing_params['household_size']
+            
             optimization_level = st.select_slider(
                 "Select Optimization Strategy:",
                 options=["conservative", "moderate", "aggressive"],
@@ -440,29 +513,34 @@ if main_mode == "💰 Bill Analysis & Optimization":
                 key="optimization_level_slider"
             )
             
-            savings = analyzer.calculate_potential_savings(bill_amount, rate_structure, optimization_level)
+            savings = analyzer.calculate_potential_savings(
+                bill_amount, 
+                canton=canton,
+                household_size=household_size,
+                optimization_level=optimization_level
+            )
             
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.metric(
                     "Monthly Savings",
-                    f"€{savings['monthly_savings']:.2f}",
+                    f"CHF {savings['monthly_savings']:.2f}",
                     f"{savings['percentage_savings']:.1f}% reduction"
                 )
             
             with col2:
                 st.metric(
                     "Annual Savings",
-                    f"€{savings['annual_savings']:.2f}",
+                    f"CHF {savings['annual_savings']:.2f}",
                     "Estimated"
                 )
             
             with col3:
                 st.metric(
                     "Optimized Bill",
-                    f"€{savings['optimized_bill']:.2f}",
-                    f"-€{savings['monthly_savings']:.2f}"
+                    f"CHF {savings['optimized_bill']:.2f}",
+                    f"-CHF {savings['monthly_savings']:.2f}"
                 )
             
             st.markdown(f"**Strategy:** {savings['description']}")
@@ -476,7 +554,7 @@ if main_mode == "💰 Bill Analysis & Optimization":
             
             comparison_df = pd.DataFrame({
                 'Category': ['Current Bill', 'Optimized Bill', 'Monthly Savings'],
-                'Amount (€)': [
+                'Amount (CHF)': [
                     savings['current_bill'],
                     savings['optimized_bill'],
                     savings['monthly_savings']
@@ -484,7 +562,6 @@ if main_mode == "💰 Bill Analysis & Optimization":
             })
             
             st.bar_chart(comparison_df.set_index('Category'))
-
 # ===== PRICE FORECASTING MODULE (Original Content) =====
 elif main_mode == "🔮 Price Forecasting & Analysis":
 
@@ -537,7 +614,7 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
             st.markdown("### Electricity Price Over Time")
             price_chart_df = st.session_state.df[['datetime', 'price']].copy()
             price_chart_df = price_chart_df.set_index('datetime')
-            st.line_chart(price_chart_df, use_container_width=True)
+            st.line_chart(price_chart_df)
             
             col1, col2 = st.columns(2)
             with col1:
@@ -564,7 +641,7 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
                 st.markdown("### System Load Over Time")
                 load_chart_df = st.session_state.df[['datetime', 'energy_consumption']].copy()
                 load_chart_df = load_chart_df.set_index('datetime')
-                st.line_chart(load_chart_df, use_container_width=True)
+                st.line_chart(load_chart_df)
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1021,7 +1098,7 @@ elif main_mode == "🔮 Price Forecasting & Analysis":
                     responses_df[['timestamp', 'participant_id', 'preference', 
                                   'method_a_helpfulness', 'method_b_helpfulness',
                                   'comments']],
-                    use_container_width=True
+                    
                 )
                 
                 # Export options

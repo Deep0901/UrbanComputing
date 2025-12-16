@@ -1,279 +1,269 @@
 """
-Billing Analysis Module
-Analyze electricity bills and provide detailed breakdown
+Swiss Billing Analysis Module
+Analyze electricity bills with Swiss tariff structure (CHF)
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Optional
+
+# Swiss average prices (CHF) - ElCom 2024 data
+SWISS_DEFAULTS = {
+    "energy_rate": 0.1271,          # CHF/kWh energy component
+    "grid_rate": 0.0962,            # CHF/kWh network/grid charges
+    "taxes_levies_rate": 0.0230,    # CHF/kWh (KEV, SDL, municipal)
+    "fixed_monthly": 10.50,         # CHF/month standing charge
+    "vat_rate": 0.081,              # 8.1% Swiss VAT
+    "avg_household_kwh": 4500 / 12, # ~375 kWh/month (4-person household)
+    "avg_household_bill": 108.0,    # CHF/month average
+}
+
+# Regional multipliers (illustrative)
+CANTON_MULTIPLIERS = {
+    "Zürich": 1.00,
+    "Bern": 0.95,
+    "Geneva": 1.08,
+    "Basel": 0.92,
+    "Lausanne": 1.05,
+    "Other": 1.00,
+}
+
+HOUSEHOLD_KWHS = {
+    "1 person": 200,
+    "2 persons": 300,
+    "3 persons": 350,
+    "4 persons": 375,
+    "5+ persons": 450,
+}
+
 
 class BillingAnalyzer:
-    """Analyzes electricity bills and provides detailed explanations"""
-    
+    """Analyzes Swiss electricity bills and provides detailed explanations"""
+
     def __init__(self):
-        # Common rate structures (per kWh)
-        self.rate_structures = {
-            "Residential - Standard": {
-                "base_rate": 0.12,  # €/kWh
-                "peak_rate": 0.18,  # €/kWh (6 AM - 10 PM)
-                "off_peak_rate": 0.08,  # €/kWh (10 PM - 6 AM)
-                "fixed_charge": 15.0,  # € per month
-                "tax_rate": 0.21,  # 21% VAT
-            },
-            "Residential - Time-of-Use": {
-                "base_rate": 0.10,
-                "peak_rate": 0.22,
-                "off_peak_rate": 0.06,
-                "fixed_charge": 12.0,
-                "tax_rate": 0.21,
-            },
-            "Commercial": {
-                "base_rate": 0.15,
-                "peak_rate": 0.25,
-                "off_peak_rate": 0.10,
-                "fixed_charge": 50.0,
-                "tax_rate": 0.21,
-            }
-        }
-        
+        self.defaults = SWISS_DEFAULTS.copy()
+
     def analyze_bill(
         self,
         total_bill: float,
-        rate_structure: str = "Residential - Standard",
-        known_units: float = None
+        canton: str = "Other",
+        household_size: str = "4 persons",
+        custom_rates: Optional[Dict] = None,
     ) -> Dict:
         """
-        Analyze electricity bill and provide breakdown
-        
+        Analyze a Swiss electricity bill and provide breakdown.
+
         Args:
-            total_bill: Total monthly bill amount (€)
-            rate_structure: Type of rate plan
-            known_units: If known, the total units consumed (kWh)
-        
+            total_bill: Total monthly bill (CHF)
+            canton: Canton/city for regional adjustment
+            household_size: Household size for comparison
+            custom_rates: Optional overrides for rates
+
         Returns:
-            Dictionary with detailed analysis
+            Dictionary with full analysis
         """
-        rates = self.rate_structures.get(rate_structure, self.rate_structures["Residential - Standard"])
-        
-        # Reverse calculate units if not provided
-        if known_units is None:
-            # Assume 70% peak, 30% off-peak usage pattern
-            # Total bill = (units * weighted_rate + fixed_charge) * (1 + tax_rate)
-            
-            # Remove tax first
-            bill_before_tax = total_bill / (1 + rates["tax_rate"])
-            
-            # Remove fixed charge
-            energy_charges = bill_before_tax - rates["fixed_charge"]
-            
-            # Calculate weighted average rate (70% peak, 30% off-peak)
-            weighted_rate = (0.70 * rates["peak_rate"]) + (0.30 * rates["off_peak_rate"])
-            
-            # Calculate total units
-            estimated_units = energy_charges / weighted_rate if weighted_rate > 0 else 0
-            
-            # Estimate peak/off-peak breakdown
-            peak_units = estimated_units * 0.70
-            off_peak_units = estimated_units * 0.30
-        else:
-            estimated_units = known_units
-            # Assume 70% peak, 30% off-peak
-            peak_units = known_units * 0.70
-            off_peak_units = known_units * 0.30
-        
-        # Calculate charges
-        peak_charges = peak_units * rates["peak_rate"]
-        off_peak_charges = off_peak_units * rates["off_peak_rate"]
-        energy_charges = peak_charges + off_peak_charges
-        fixed_charges = rates["fixed_charge"]
-        
-        subtotal = energy_charges + fixed_charges
-        tax_amount = subtotal * rates["tax_rate"]
-        total_calculated = subtotal + tax_amount
-        
-        # Daily/hourly breakdown
-        daily_units = estimated_units / 30  # Assume 30 days
-        hourly_units = daily_units / 24
-        daily_cost = total_bill / 30
-        
-        # Cost per unit
-        cost_per_unit = total_bill / estimated_units if estimated_units > 0 else 0
-        
-        # Generate insights
-        insights = self._generate_insights(
-            estimated_units, daily_units, cost_per_unit, 
-            peak_units, off_peak_units, rates
+        # Use custom rates if provided, else defaults
+        rates = custom_rates if custom_rates else {}
+        energy_rate = rates.get("energy_rate", self.defaults["energy_rate"])
+        grid_rate = rates.get("grid_rate", self.defaults["grid_rate"])
+        taxes_levies_rate = rates.get("taxes_levies_rate", self.defaults["taxes_levies_rate"])
+        fixed_monthly = rates.get("fixed_monthly", self.defaults["fixed_monthly"])
+        vat_rate = rates.get("vat_rate", self.defaults["vat_rate"])
+
+        # Regional adjustment
+        region_mult = CANTON_MULTIPLIERS.get(canton, 1.0)
+        energy_rate *= region_mult
+        grid_rate *= region_mult
+
+        # Back-calculate kWh from bill
+        # Bill = (kWh * (energy + grid + taxes) + fixed) * (1 + VAT)
+        variable_rate = energy_rate + grid_rate + taxes_levies_rate
+        bill_before_vat = total_bill / (1 + vat_rate)
+        variable_portion = bill_before_vat - fixed_monthly
+        estimated_kwh = variable_portion / variable_rate if variable_rate > 0 else 0
+        estimated_kwh = max(estimated_kwh, 0)
+
+        # Compute cost components
+        energy_cost = estimated_kwh * energy_rate
+        grid_cost = estimated_kwh * grid_rate
+        taxes_levies = estimated_kwh * taxes_levies_rate
+        subtotal = energy_cost + grid_cost + taxes_levies + fixed_monthly
+        vat_amount = subtotal * vat_rate
+        total_calculated = subtotal + vat_amount
+
+        # Percentages
+        total_for_pct = total_calculated if total_calculated > 0 else 1
+        pct_energy = (energy_cost / total_for_pct) * 100
+        pct_grid = (grid_cost / total_for_pct) * 100
+        pct_taxes = (taxes_levies / total_for_pct) * 100
+        pct_fixed = (fixed_monthly / total_for_pct) * 100
+        pct_vat = (vat_amount / total_for_pct) * 100
+
+        # Comparison with average
+        avg_kwh = HOUSEHOLD_KWHS.get(household_size, 375)
+        avg_bill = self.defaults["avg_household_bill"]
+        diff_kwh_pct = ((estimated_kwh - avg_kwh) / avg_kwh) * 100 if avg_kwh else 0
+        diff_bill_pct = ((total_bill - avg_bill) / avg_bill) * 100 if avg_bill else 0
+
+        # Reason explanations
+        reasons = self._generate_reasons(
+            estimated_kwh, avg_kwh, pct_fixed, pct_grid, canton
         )
-        
+
+        # Assumptions text
+        assumptions = (
+            f"Energy: CHF {energy_rate:.4f}/kWh, Grid: CHF {grid_rate:.4f}/kWh, "
+            f"Taxes/Levies: CHF {taxes_levies_rate:.4f}/kWh, Fixed: CHF {fixed_monthly:.2f}/mo, "
+            f"VAT: {vat_rate*100:.1f}%. Regional multiplier ({canton}): {region_mult:.2f}. "
+            f"Avg household ({household_size}): ~{avg_kwh} kWh/mo, ~CHF {avg_bill}/mo."
+        )
+
         return {
-            "total_bill": total_bill,
-            "estimated_units": round(estimated_units, 2),
-            "peak_units": round(peak_units, 2),
-            "off_peak_units": round(off_peak_units, 2),
-            "peak_charges": round(peak_charges, 2),
-            "off_peak_charges": round(off_peak_charges, 2),
-            "energy_charges": round(energy_charges, 2),
-            "fixed_charges": round(fixed_charges, 2),
-            "tax_amount": round(tax_amount, 2),
+            "total_bill": round(total_bill, 2),
             "total_calculated": round(total_calculated, 2),
-            "daily_units": round(daily_units, 2),
-            "hourly_units": round(hourly_units, 3),
-            "daily_cost": round(daily_cost, 2),
-            "cost_per_unit": round(cost_per_unit, 3),
-            "rate_structure": rate_structure,
-            "insights": insights,
-            "rates": rates
+            "estimated_kwh": round(estimated_kwh, 1),
+            "avg_chf_per_kwh": round(total_bill / estimated_kwh, 4) if estimated_kwh > 0 else 0,
+            "energy_cost": round(energy_cost, 2),
+            "grid_cost": round(grid_cost, 2),
+            "taxes_levies": round(taxes_levies, 2),
+            "fixed_monthly": round(fixed_monthly, 2),
+            "vat_amount": round(vat_amount, 2),
+            "pct_energy": round(pct_energy, 1),
+            "pct_grid": round(pct_grid, 1),
+            "pct_taxes": round(pct_taxes, 1),
+            "pct_fixed": round(pct_fixed, 1),
+            "pct_vat": round(pct_vat, 1),
+            "avg_kwh": avg_kwh,
+            "avg_bill": avg_bill,
+            "diff_kwh_pct": round(diff_kwh_pct, 1),
+            "diff_bill_pct": round(diff_bill_pct, 1),
+            "reasons": reasons,
+            "assumptions": assumptions,
+            "rates": {
+                "energy_rate": energy_rate,
+                "grid_rate": grid_rate,
+                "taxes_levies_rate": taxes_levies_rate,
+                "fixed_monthly": fixed_monthly,
+                "vat_rate": vat_rate,
+            },
+            "canton": canton,
+            "household_size": household_size,
         }
-    
-    def _generate_insights(
-        self, 
-        total_units: float, 
-        daily_units: float, 
-        cost_per_unit: float,
-        peak_units: float,
-        off_peak_units: float,
-        rates: Dict
+
+    def _generate_reasons(
+        self,
+        estimated_kwh: float,
+        avg_kwh: float,
+        pct_fixed: float,
+        pct_grid: float,
+        canton: str,
     ) -> Dict:
-        """Generate insights about consumption patterns"""
-        
-        insights = {
-            "consumption_level": "",
-            "cost_efficiency": "",
-            "recommendations": [],
-            "comparison": ""
-        }
-        
-        # Consumption level analysis
-        if total_units < 200:
-            insights["consumption_level"] = "🟢 Low consumption - Efficient usage"
-        elif total_units < 400:
-            insights["consumption_level"] = "🟡 Moderate consumption - Average household"
-        elif total_units < 600:
-            insights["consumption_level"] = "🟠 Above average consumption"
-        else:
-            insights["consumption_level"] = "🔴 High consumption - Review usage patterns"
-        
-        # Cost efficiency
-        if cost_per_unit < 0.15:
-            insights["cost_efficiency"] = "✅ Good rate - Below market average"
-        elif cost_per_unit < 0.20:
-            insights["cost_efficiency"] = "⚠️ Average rate - Consider time-of-use plans"
-        else:
-            insights["cost_efficiency"] = "❗ High rate - Negotiate or switch provider"
-        
-        # Recommendations
-        insights["recommendations"].append(
-            f"💡 Shift {round(peak_units * 0.2, 1)} kWh from peak to off-peak hours to save "
-            f"€{round(peak_units * 0.2 * (rates['peak_rate'] - rates['off_peak_rate']), 2)}/month"
+        """Generate reason explanations for bill components."""
+        reasons = {}
+
+        # Grid fees
+        reasons["grid_fees"] = (
+            "Grid/network charges cover the cost of maintaining and operating the electricity "
+            "distribution network (poles, cables, transformers). These are regulated by ElCom and "
+            "vary by region based on local infrastructure costs."
         )
-        
-        if daily_units > 15:
-            insights["recommendations"].append(
-                "⚡ High daily usage detected - Check for inefficient appliances or phantom loads"
+
+        # Fixed costs
+        reasons["fixed_costs"] = (
+            "Fixed monthly charges cover metering, billing, and customer service regardless of "
+            "how much electricity you use. Even with zero consumption, you pay this base fee."
+        )
+
+        # High bill with low usage
+        if estimated_kwh < avg_kwh * 0.7 and pct_fixed > 15:
+            reasons["high_bill_low_usage"] = (
+                "Your bill may seem high relative to usage because fixed charges and grid fees "
+                "make up a large share. These costs don't scale with consumption."
             )
-        
-        if peak_units / (peak_units + off_peak_units) > 0.8:
-            insights["recommendations"].append(
-                "🌙 Most usage during peak hours - Consider running dishwasher/laundry at night"
-            )
-        
-        # Comparison
-        avg_household = 300  # kWh/month
-        if total_units < avg_household * 0.7:
-            insights["comparison"] = f"📊 You use {round((1 - total_units/avg_household)*100)}% less than average household"
-        elif total_units > avg_household * 1.3:
-            insights["comparison"] = f"📊 You use {round((total_units/avg_household - 1)*100)}% more than average household"
         else:
-            insights["comparison"] = "📊 Your consumption is close to average household usage"
-        
-        return insights
-    
+            reasons["high_bill_low_usage"] = None
+
+        # Seasonal effects
+        reasons["seasonal"] = (
+            "Swiss electricity prices can vary seasonally. Winter months often see higher demand "
+            "(heating, lighting) which can increase both consumption and sometimes spot prices."
+        )
+
+        # Regional effects
+        if canton in ["Geneva", "Lausanne"]:
+            reasons["regional"] = (
+                f"{canton} tends to have above-average electricity prices due to higher local "
+                "utility and grid costs."
+            )
+        elif canton in ["Basel", "Bern"]:
+            reasons["regional"] = (
+                f"{canton} benefits from relatively lower electricity prices compared to the "
+                "Swiss average."
+            )
+        else:
+            reasons["regional"] = (
+                "Electricity prices vary across Swiss cantons depending on local utility costs, "
+                "grid infrastructure, and municipal fees."
+            )
+
+        return reasons
+
     def calculate_potential_savings(
         self,
         current_bill: float,
-        rate_structure: str,
-        optimization_level: str = "moderate"
+        canton: str = "Other",
+        household_size: str = "4 persons",
+        optimization_level: str = "moderate",
     ) -> Dict:
-        """Calculate potential savings with optimization strategies"""
-        
-        analysis = self.analyze_bill(current_bill, rate_structure)
-        
-        savings_scenarios = {
-            "conservative": {
-                "peak_reduction": 0.10,  # 10% reduction in peak usage
-                "efficiency_gain": 0.05,  # 5% overall reduction
-                "description": "Basic efficiency improvements"
-            },
-            "moderate": {
-                "peak_reduction": 0.20,  # 20% reduction
-                "efficiency_gain": 0.10,  # 10% overall reduction
-                "description": "Time-shifting and efficiency upgrades"
-            },
-            "aggressive": {
-                "peak_reduction": 0.30,  # 30% reduction
-                "efficiency_gain": 0.15,  # 15% overall reduction
-                "description": "Major behavioral changes + smart home"
-            }
+        """Calculate potential savings with optimization strategies."""
+        analysis = self.analyze_bill(current_bill, canton, household_size)
+
+        scenarios = {
+            "conservative": {"reduction": 0.05, "desc": "Basic efficiency (LED, standby off)"},
+            "moderate": {"reduction": 0.12, "desc": "Efficiency + load shifting"},
+            "aggressive": {"reduction": 0.20, "desc": "Major upgrades + solar"},
         }
-        
-        scenario = savings_scenarios.get(optimization_level, savings_scenarios["moderate"])
-        
-        # Calculate new consumption
-        new_peak_units = analysis["peak_units"] * (1 - scenario["peak_reduction"])
-        new_off_peak_units = analysis["off_peak_units"] + (analysis["peak_units"] * scenario["peak_reduction"])
-        
-        # Apply efficiency gain
-        new_peak_units *= (1 - scenario["efficiency_gain"])
-        new_off_peak_units *= (1 - scenario["efficiency_gain"])
-        
-        # Calculate new bill
+        scenario = scenarios.get(optimization_level, scenarios["moderate"])
+
+        new_kwh = analysis["estimated_kwh"] * (1 - scenario["reduction"])
         rates = analysis["rates"]
-        new_energy_charges = (new_peak_units * rates["peak_rate"]) + (new_off_peak_units * rates["off_peak_rate"])
-        new_subtotal = new_energy_charges + rates["fixed_charge"]
-        new_total = new_subtotal * (1 + rates["tax_rate"])
-        
+        variable_rate = rates["energy_rate"] + rates["grid_rate"] + rates["taxes_levies_rate"]
+        new_variable = new_kwh * variable_rate
+        new_subtotal = new_variable + rates["fixed_monthly"]
+        new_total = new_subtotal * (1 + rates["vat_rate"])
+
         monthly_savings = current_bill - new_total
         annual_savings = monthly_savings * 12
-        percentage_savings = (monthly_savings / current_bill) * 100
-        
+
         return {
             "optimization_level": optimization_level,
-            "description": scenario["description"],
+            "description": scenario["desc"],
             "current_bill": round(current_bill, 2),
             "optimized_bill": round(new_total, 2),
             "monthly_savings": round(monthly_savings, 2),
             "annual_savings": round(annual_savings, 2),
-            "percentage_savings": round(percentage_savings, 1),
-            "new_peak_units": round(new_peak_units, 2),
-            "new_off_peak_units": round(new_off_peak_units, 2),
-            "actions": self._get_optimization_actions(optimization_level)
+            "percentage_savings": round((monthly_savings / current_bill) * 100, 1) if current_bill else 0,
+            "actions": self._get_optimization_actions(optimization_level),
         }
-    
+
     def _get_optimization_actions(self, level: str) -> list:
-        """Get specific actions for optimization level"""
-        
         actions = {
             "conservative": [
-                "Switch to LED bulbs",
-                "Unplug devices when not in use",
-                "Use power strips to eliminate phantom loads",
-                "Set thermostat 1-2°C lower in winter/higher in summer"
+                "Replace bulbs with LED",
+                "Turn off standby devices",
+                "Use cold wash for laundry",
             ],
             "moderate": [
                 "All conservative actions",
-                "Run dishwasher/laundry during off-peak hours (after 10 PM)",
-                "Install programmable thermostat",
-                "Upgrade to Energy Star appliances",
-                "Use timer switches for water heater"
+                "Shift heavy loads to off-peak hours",
+                "Upgrade old appliances to A+++",
+                "Install smart plugs/timers",
             ],
             "aggressive": [
                 "All moderate actions",
-                "Install smart home energy management system",
-                "Add solar panels (3-5 kW system)",
-                "Upgrade to heat pump",
+                "Install rooftop solar (3-5 kW)",
                 "Add home battery storage",
-                "Implement demand response automation"
-            ]
+                "Switch to heat pump heating",
+            ],
         }
-        
         return actions.get(level, actions["moderate"])
