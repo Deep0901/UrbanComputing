@@ -372,26 +372,57 @@ if main_mode == "💰 Bill Analysis & Optimization":
         
         st.divider()
         
-        # ===== REASON EXPLANATIONS =====
-        st.subheader("📖 Why These Costs Exist")
+        # ===== DYNAMIC REASON EXPLANATIONS =====
+        st.subheader("🔍 Why Is Your Bill This Amount?")
         
         reasons = analysis['reasons']
         
-        with st.expander("🔌 Grid / Network Charges", expanded=True):
-            st.markdown(reasons['grid_fees'])
+        # Main reason (high/low/normal bill)
+        main = reasons.get('main_reason', {})
+        if main.get('severity') == 'high':
+            st.error(f"**{main.get('title', '')}**\n\n{main.get('explanation', '')}")
+        elif main.get('severity') == 'medium':
+            st.warning(f"**{main.get('title', '')}**\n\n{main.get('explanation', '')}")
+        elif main.get('severity') == 'low':
+            st.success(f"**{main.get('title', '')}**\n\n{main.get('explanation', '')}")
+        else:
+            st.info(f"**{main.get('title', '')}**\n\n{main.get('explanation', '')}")
         
-        with st.expander("🏠 Fixed Monthly Charges", expanded=True):
-            st.markdown(reasons['fixed_costs'])
+        # Consumption drivers
+        with st.expander("📊 What's Driving Your Consumption?", expanded=True):
+            for driver in reasons.get('consumption_drivers', []):
+                st.markdown(driver)
         
-        if reasons.get('high_bill_low_usage'):
-            with st.expander("❓ Why Bill Can Be High Even With Low Usage", expanded=True):
-                st.markdown(reasons['high_bill_low_usage'])
+        # Regional impact
+        regional = reasons.get('regional_impact', {})
+        with st.expander(regional.get('title', '📍 Regional Analysis'), expanded=False):
+            st.markdown(regional.get('explanation', ''))
+            if regional.get('impact'):
+                st.markdown(f"**Impact:** {regional.get('impact')}")
         
-        with st.expander("❄️ Seasonal Effects", expanded=False):
-            st.markdown(reasons['seasonal'])
+        # Cost insights
+        cost_insights = reasons.get('cost_insights', [])
+        if cost_insights:
+            with st.expander("💰 Cost Breakdown Insights", expanded=False):
+                for insight in cost_insights:
+                    st.markdown(insight)
         
-        with st.expander("📍 Regional Effects", expanded=False):
-            st.markdown(reasons['regional'])
+        st.divider()
+        
+        # ===== PERSONALIZED TIPS & QUICK ACTIONS =====
+        st.subheader("💡 Personalized Tips & Actions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**🎯 Quick Actions (This Month)**")
+            for action in reasons.get('quick_actions', []):
+                st.markdown(action)
+        
+        with col2:
+            st.markdown("**💡 Energy-Saving Tips For You**")
+            for tip in reasons.get('personalized_tips', [])[:4]:
+                st.markdown(tip)
         
         st.divider()
         
@@ -441,64 +472,138 @@ if main_mode == "💰 Bill Analysis & Optimization":
         tab_a, tab_b = st.tabs(["📊 Method A (Numerical)", "🗣️ Method B (Linguistic)"])
 
         with tab_a:
-            st.markdown("**What you see:** Regulator-grade breakdown with formulas and line items (dense on purpose)")
+            st.markdown("**Technical Analysis with Formulas and Data**")
             
-            st.markdown(
-                "**Bill formula:** `Total = (kWh × (Energy + Grid + Taxes/Levies) + Fixed) × (1 + VAT)`"
-            )
-            st.markdown(
-                f"- Variable rate: CHF {analysis['rates']['energy_rate']:.4f} + {analysis['rates']['grid_rate']:.4f} + {analysis['rates']['taxes_levies_rate']:.4f} = **CHF {(analysis['rates']['energy_rate']+analysis['rates']['grid_rate']+analysis['rates']['taxes_levies_rate']):.4f}/kWh**"
-            )
-            st.markdown(f"- Fixed component: **CHF {analysis['rates']['fixed_monthly']:.2f}/month**")
-            st.markdown(f"- VAT rate: **{analysis['rates']['vat_rate']*100:.1f}%**")
+            # Bill formula
+            st.markdown("### 📐 Bill Calculation Formula")
+            st.code("Total = (kWh × (Energy + Grid + Taxes/Levies) + Fixed) × (1 + VAT)", language="text")
             
-            st.markdown("---")
-            st.markdown("### Component Details")
+            variable_rate = analysis['rates']['energy_rate'] + analysis['rates']['grid_rate'] + analysis['rates']['taxes_levies_rate']
+            
             st.markdown(f"""
-            | Component | Rate | Your Cost | Share |
-            |-----------|------|-----------|-------|
-            | Energy (electricity used) | CHF {analysis['rates']['energy_rate']:.4f}/kWh | CHF {analysis['energy_cost']:.2f} | {analysis['pct_energy']:.1f}% |
-            | Grid/Network charges | CHF {analysis['rates']['grid_rate']:.4f}/kWh | CHF {analysis['grid_cost']:.2f} | {analysis['pct_grid']:.1f}% |
-            | Taxes & Levies (KEV, SDL) | CHF {analysis['rates']['taxes_levies_rate']:.4f}/kWh | CHF {analysis['taxes_levies']:.2f} | {analysis['pct_taxes']:.1f}% |
-            | Fixed monthly charge | CHF {analysis['rates']['fixed_monthly']:.2f}/mo | CHF {analysis['fixed_monthly']:.2f} | {analysis['pct_fixed']:.1f}% |
-            | VAT | {analysis['rates']['vat_rate']*100:.1f}% | CHF {analysis['vat_amount']:.2f} | {analysis['pct_vat']:.1f}% |
+            **Your bill breakdown:**
+            - Estimated consumption: **{analysis['estimated_kwh']:.1f} kWh**
+            - Variable rate: {analysis['rates']['energy_rate']:.4f} + {analysis['rates']['grid_rate']:.4f} + {analysis['rates']['taxes_levies_rate']:.4f} = **{variable_rate:.4f} CHF/kWh**
+            - Variable cost: {analysis['estimated_kwh']:.1f} × {variable_rate:.4f} = **CHF {analysis['estimated_kwh'] * variable_rate:.2f}**
+            - Fixed monthly: **CHF {analysis['rates']['fixed_monthly']:.2f}**
+            - Subtotal: CHF {(analysis['estimated_kwh'] * variable_rate + analysis['rates']['fixed_monthly']):.2f}
+            - VAT ({analysis['rates']['vat_rate']*100:.1f}%): **CHF {analysis['vat_amount']:.2f}**
+            - **Total: CHF {analysis['total_calculated']:.2f}**
             """)
             
-            st.markdown("---")
-            st.markdown("### Regulatory Notes")
-            st.markdown("- Energy prices set by supplier; grid charges regulated by ElCom")
-            st.markdown("- KEV (Kostendeckende Einspeisevergütung) supports renewable energy")
-            st.markdown("- SDL (Systemdienstleistungen) covers Swissgrid system services")
-            st.markdown("- Regional multipliers reflect local utility infrastructure costs")
+            st.markdown("### 📊 Statistical Comparison")
+            diff_kwh = analysis['estimated_kwh'] - analysis['avg_kwh']
+            diff_bill = analysis['total_bill'] - analysis['avg_bill']
+            
+            st.markdown(f"""
+            | Metric | Your Value | Average ({analysis['household_size']}) | Difference |
+            |--------|------------|-----------------|------------|
+            | Consumption | {analysis['estimated_kwh']:.0f} kWh | {analysis['avg_kwh']} kWh | {diff_kwh:+.0f} kWh ({analysis['diff_kwh_pct']:+.1f}%) |
+            | Monthly Bill | CHF {analysis['total_bill']:.2f} | CHF {analysis['avg_bill']:.2f} | CHF {diff_bill:+.2f} ({analysis['diff_bill_pct']:+.1f}%) |
+            | Cost per kWh | CHF {analysis['avg_chf_per_kwh']:.4f} | CHF 0.2880 | CHF {analysis['avg_chf_per_kwh']-0.288:+.4f} |
+            """)
+            
+            st.markdown("### 📈 Efficiency Metrics")
+            efficiency_score = max(0, min(100, 100 - analysis['diff_kwh_pct']))
+            st.progress(efficiency_score / 100, text=f"Energy Efficiency Score: {efficiency_score:.0f}/100")
+            
+            st.markdown(f"""
+            - **Cost efficiency**: CHF {analysis['avg_chf_per_kwh']:.4f}/kWh (Swiss avg: ~0.27-0.29 CHF/kWh)
+            - **Grid cost ratio**: {analysis['pct_grid']:.1f}% (typical: 35-40%)
+            - **Fixed cost ratio**: {analysis['pct_fixed']:.1f}% (lower usage = higher ratio)
+            """)
 
         with tab_b:
-            st.markdown("**What you see:** Simple, plain-language explanation")
+            st.markdown("**Plain Language Explanation**")
             
-            st.info(
-                f"Your monthly bill of **CHF {analysis['total_bill']:.2f}** covers about **{analysis['estimated_kwh']:.0f} kWh** of electricity. "
-                f"That works out to roughly **CHF {analysis['avg_chf_per_kwh']:.2f} per kWh** all-in."
-            )
+            # Dynamic intro based on bill level
+            main_reason = analysis['reasons'].get('main_reason', {})
             
-            st.markdown("### Where your money goes:")
-            st.markdown(f"- 🔌 **{analysis['pct_energy']:.0f}%** pays for the actual electricity you used")
-            st.markdown(f"- 🌐 **{analysis['pct_grid']:.0f}%** pays for the power grid (poles, cables, maintenance)")
-            st.markdown(f"- 🏛️ **{analysis['pct_taxes']:.0f}%** goes to government taxes and renewable energy support")
-            st.markdown(f"- 📋 **{analysis['pct_fixed']:.0f}%** is a fixed monthly fee (you pay this even if you use zero electricity)")
-            st.markdown(f"- 💵 **{analysis['pct_vat']:.0f}%** is VAT")
-            
-            st.markdown("### Key takeaways:")
-            if analysis['diff_kwh_pct'] > 20:
-                st.warning(f"⚠️ You use about {analysis['diff_kwh_pct']:.0f}% more than a typical {analysis['household_size']} household. Look for energy-saving opportunities!")
-            elif analysis['diff_kwh_pct'] < -20:
-                st.success(f"✅ Great job! You use about {abs(analysis['diff_kwh_pct']):.0f}% less than average.")
+            if main_reason.get('severity') == 'high':
+                st.error(f"""
+                ### ⚠️ Your Bill is Higher Than Expected
+                
+                Your electricity bill of **CHF {analysis['total_bill']:.2f}** is significantly above 
+                average for a {analysis['household_size']} household in Switzerland.
+                
+                **In simple terms:** You're paying about **CHF {analysis['total_bill'] - analysis['avg_bill']:.2f} more** 
+                per month than similar households. Over a year, that's **CHF {(analysis['total_bill'] - analysis['avg_bill'])*12:.0f}** 
+                that could be saved!
+                """)
+            elif main_reason.get('severity') == 'medium':
+                st.warning(f"""
+                ### 📊 Your Bill is Slightly Above Average
+                
+                Your bill of **CHF {analysis['total_bill']:.2f}** is a bit higher than typical.
+                There's some room for savings without major lifestyle changes.
+                """)
+            elif main_reason.get('severity') == 'low':
+                st.success(f"""
+                ### 🌟 Great Job - You're Below Average!
+                
+                Your bill of **CHF {analysis['total_bill']:.2f}** is **lower than average**! 
+                You're saving about **CHF {analysis['avg_bill'] - analysis['total_bill']:.2f}/month** 
+                compared to similar households.
+                """)
             else:
-                st.info("📊 Your usage is close to average for your household size.")
+                st.info(f"""
+                ### ✅ Your Bill is Normal
+                
+                Your bill of **CHF {analysis['total_bill']:.2f}** is typical for a {analysis['household_size']} 
+                household in {analysis['canton']}. You're using energy responsibly.
+                """)
             
-            st.markdown("### Simple tips to save:")
-            st.markdown("- 💡 Switch to LED bulbs")
-            st.markdown("- 🔌 Unplug devices when not in use")
-            st.markdown("- 🌡️ Lower heating by 1°C (saves ~6% heating cost)")
-            st.markdown("- 🧺 Wash laundry at 30°C instead of 60°C")
+            st.markdown("### 🏠 Where Does Your Money Go?")
+            st.markdown(f"""
+            Think of your CHF {analysis['total_bill']:.2f} bill like this:
+            
+            - 🔌 **CHF {analysis['energy_cost']:.2f}** ({analysis['pct_energy']:.0f}%) - The actual electricity you used
+            - 🌐 **CHF {analysis['grid_cost']:.2f}** ({analysis['pct_grid']:.0f}%) - Maintaining the power lines, poles, and transformers that bring electricity to your home
+            - 🏛️ **CHF {analysis['taxes_levies']:.2f}** ({analysis['pct_taxes']:.0f}%) - Taxes and fees supporting Switzerland's renewable energy goals
+            - 📋 **CHF {analysis['fixed_monthly']:.2f}** ({analysis['pct_fixed']:.0f}%) - A fixed fee you pay even if you use zero electricity (like a subscription)
+            - 💵 **CHF {analysis['vat_amount']:.2f}** ({analysis['pct_vat']:.0f}%) - Swiss VAT (value-added tax)
+            """)
+            
+            st.markdown("### 💡 What Can You Do?")
+            
+            if analysis['diff_bill_pct'] > 15:
+                st.markdown("""
+                **Top 3 actions to reduce your bill:**
+                1. 🔍 **Check for "energy vampires"** - devices that consume power even when off (TV, gaming consoles, chargers)
+                2. 💡 **Switch to LED bulbs** - they use 80% less energy than traditional bulbs
+                3. 🧊 **Check your fridge** - if it's over 10 years old, a new A+++ model could cut its energy use by 50%
+                """)
+            elif analysis['diff_bill_pct'] > 0:
+                st.markdown("""
+                **Small changes that add up:**
+                1. ⏰ **Run appliances at night** - some tariffs offer cheaper off-peak rates
+                2. 🌡️ **Lower heating by 1°C** - saves about 6% on heating costs
+                3. 🧺 **Wash at 30°C** - modern detergents work well at lower temperatures
+                """)
+            else:
+                st.markdown("""
+                **Keep up the good work! A few more ideas:**
+                1. ☀️ **Consider solar** - Switzerland has great incentives for rooftop solar
+                2. 📊 **Get a smart meter** - track your usage in real-time
+                3. 🔋 **Future-proof** - home batteries can store cheap night-time electricity
+                """)
+            
+            # Simple comparison visual
+            st.markdown("### 📊 How You Compare")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "Your Monthly Bill",
+                    f"CHF {analysis['total_bill']:.0f}",
+                    f"{analysis['diff_bill_pct']:+.0f}% vs average",
+                    delta_color="inverse"
+                )
+            with col2:
+                st.metric(
+                    "Average Household",
+                    f"CHF {analysis['avg_bill']:.0f}",
+                    f"{analysis['household_size']}"
+                )
             
         # ===== SAVINGS CALCULATOR =====
         with st.expander("💰 Potential Savings Calculator", expanded=True):

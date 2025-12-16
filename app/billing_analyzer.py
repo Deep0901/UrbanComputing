@@ -105,9 +105,26 @@ class BillingAnalyzer:
         diff_kwh_pct = ((estimated_kwh - avg_kwh) / avg_kwh) * 100 if avg_kwh else 0
         diff_bill_pct = ((total_bill - avg_bill) / avg_bill) * 100 if avg_bill else 0
 
-        # Reason explanations
+        # Build rates dict for reasons
+        rates_dict = {
+            "energy_rate": energy_rate,
+            "grid_rate": grid_rate,
+            "taxes_levies_rate": taxes_levies_rate,
+            "fixed_monthly": fixed_monthly,
+            "vat_rate": vat_rate,
+        }
+
+        # Reason explanations (dynamic, based on actual analysis)
         reasons = self._generate_reasons(
-            estimated_kwh, avg_kwh, pct_fixed, pct_grid, canton
+            estimated_kwh=estimated_kwh,
+            avg_kwh=avg_kwh,
+            pct_fixed=pct_fixed,
+            pct_grid=pct_grid,
+            canton=canton,
+            total_bill=total_bill,
+            avg_bill=avg_bill,
+            household_size=household_size,
+            rates=rates_dict,
         )
 
         # Assumptions text
@@ -157,55 +174,223 @@ class BillingAnalyzer:
         pct_fixed: float,
         pct_grid: float,
         canton: str,
+        total_bill: float,
+        avg_bill: float,
+        household_size: str,
+        rates: Dict,
     ) -> Dict:
-        """Generate reason explanations for bill components."""
+        """Generate dynamic, realistic reason explanations based on actual bill analysis."""
         reasons = {}
-
-        # Grid fees
-        reasons["grid_fees"] = (
-            "Grid/network charges cover the cost of maintaining and operating the electricity "
-            "distribution network (poles, cables, transformers). These are regulated by ElCom and "
-            "vary by region based on local infrastructure costs."
-        )
-
-        # Fixed costs
-        reasons["fixed_costs"] = (
-            "Fixed monthly charges cover metering, billing, and customer service regardless of "
-            "how much electricity you use. Even with zero consumption, you pay this base fee."
-        )
-
-        # High bill with low usage
-        if estimated_kwh < avg_kwh * 0.7 and pct_fixed > 15:
-            reasons["high_bill_low_usage"] = (
-                "Your bill may seem high relative to usage because fixed charges and grid fees "
-                "make up a large share. These costs don't scale with consumption."
-            )
+        
+        diff_kwh_pct = ((estimated_kwh - avg_kwh) / avg_kwh) * 100 if avg_kwh else 0
+        diff_bill_pct = ((total_bill - avg_bill) / avg_bill) * 100 if avg_bill else 0
+        
+        # ===== MAIN REASON: Why is bill high/low/normal? =====
+        if diff_bill_pct > 30:
+            reasons["main_reason"] = {
+                "title": "🔴 Your Bill is Significantly Higher Than Average",
+                "explanation": (
+                    f"Your bill of CHF {total_bill:.2f} is **{diff_bill_pct:.0f}% higher** than the "
+                    f"typical {household_size} household (CHF {avg_bill:.2f}). "
+                    f"This is primarily because you consumed **{estimated_kwh:.0f} kWh** this month, "
+                    f"which is {diff_kwh_pct:.0f}% {'above' if diff_kwh_pct > 0 else 'below'} average."
+                ),
+                "severity": "high"
+            }
+        elif diff_bill_pct > 10:
+            reasons["main_reason"] = {
+                "title": "🟠 Your Bill is Above Average",
+                "explanation": (
+                    f"Your bill of CHF {total_bill:.2f} is **{diff_bill_pct:.0f}% higher** than average. "
+                    f"Your consumption of {estimated_kwh:.0f} kWh suggests some room for optimization."
+                ),
+                "severity": "medium"
+            }
+        elif diff_bill_pct < -20:
+            reasons["main_reason"] = {
+                "title": "🟢 Your Bill is Below Average - Great Job!",
+                "explanation": (
+                    f"Your bill of CHF {total_bill:.2f} is **{abs(diff_bill_pct):.0f}% lower** than "
+                    f"the typical {household_size} household. Your {estimated_kwh:.0f} kWh consumption "
+                    f"shows you're being energy efficient!"
+                ),
+                "severity": "low"
+            }
         else:
-            reasons["high_bill_low_usage"] = None
-
-        # Seasonal effects
-        reasons["seasonal"] = (
-            "Swiss electricity prices can vary seasonally. Winter months often see higher demand "
-            "(heating, lighting) which can increase both consumption and sometimes spot prices."
-        )
-
-        # Regional effects
+            reasons["main_reason"] = {
+                "title": "🟡 Your Bill is Within Normal Range",
+                "explanation": (
+                    f"Your bill of CHF {total_bill:.2f} is close to the Swiss average for a "
+                    f"{household_size} household. Your {estimated_kwh:.0f} kWh consumption is typical."
+                ),
+                "severity": "normal"
+            }
+        
+        # ===== CONSUMPTION DRIVERS =====
+        consumption_drivers = []
+        
+        if estimated_kwh > 400:
+            consumption_drivers.append(
+                "🔌 **High base consumption**: You may have energy-intensive appliances running "
+                "(electric water heater, old refrigerator, or always-on devices)."
+            )
+        
+        if estimated_kwh > avg_kwh * 1.3:
+            consumption_drivers.append(
+                "📈 **Above-average usage pattern**: Consider whether you've had guests, "
+                "used heating/cooling more, or added new appliances recently."
+            )
+        
+        if pct_grid > 40:
+            consumption_drivers.append(
+                f"🌐 **High grid charges ({pct_grid:.0f}%)**: Your region has above-average "
+                "network costs. This is set by your local utility and regulated by ElCom."
+            )
+        
+        if pct_fixed > 12:
+            consumption_drivers.append(
+                f"📋 **Fixed costs impact ({pct_fixed:.0f}%)**: With lower consumption, "
+                "fixed charges take a bigger percentage of your bill."
+            )
+        
+        # Seasonal consideration (winter months)
+        import datetime
+        current_month = datetime.datetime.now().month
+        if current_month in [11, 12, 1, 2]:
+            consumption_drivers.append(
+                "❄️ **Winter season**: Higher lighting needs and potential electric heating "
+                "typically increase consumption by 15-30% compared to summer."
+            )
+        elif current_month in [6, 7, 8]:
+            consumption_drivers.append(
+                "☀️ **Summer season**: If you use air conditioning, this can significantly "
+                "increase your consumption during hot periods."
+            )
+        
+        reasons["consumption_drivers"] = consumption_drivers if consumption_drivers else [
+            "✅ No unusual consumption patterns detected."
+        ]
+        
+        # ===== REGIONAL ANALYSIS =====
+        region_mult = CANTON_MULTIPLIERS.get(canton, 1.0)
         if canton in ["Geneva", "Lausanne"]:
-            reasons["regional"] = (
-                f"{canton} tends to have above-average electricity prices due to higher local "
-                "utility and grid costs."
-            )
+            reasons["regional_impact"] = {
+                "title": f"📍 {canton} - Above Average Prices",
+                "explanation": (
+                    f"Electricity in {canton} costs about **{(region_mult-1)*100:.0f}% more** than "
+                    "the Swiss average due to higher local utility costs, urban infrastructure "
+                    "maintenance, and municipal fees."
+                ),
+                "impact": f"+{(region_mult-1)*total_bill:.2f} CHF extra on your bill"
+            }
         elif canton in ["Basel", "Bern"]:
-            reasons["regional"] = (
-                f"{canton} benefits from relatively lower electricity prices compared to the "
-                "Swiss average."
-            )
+            reasons["regional_impact"] = {
+                "title": f"📍 {canton} - Below Average Prices",
+                "explanation": (
+                    f"Good news! {canton} has **{abs(1-region_mult)*100:.0f}% lower** electricity "
+                    "prices than the Swiss average, thanks to efficient local utilities."
+                ),
+                "impact": f"You save ~{abs(1-region_mult)*total_bill:.2f} CHF compared to average"
+            }
         else:
-            reasons["regional"] = (
-                "Electricity prices vary across Swiss cantons depending on local utility costs, "
-                "grid infrastructure, and municipal fees."
+            reasons["regional_impact"] = {
+                "title": f"📍 {canton} - Average Prices",
+                "explanation": (
+                    f"Electricity prices in {canton} are close to the Swiss national average."
+                ),
+                "impact": "No significant regional premium or discount"
+            }
+        
+        # ===== COST BREAKDOWN INSIGHTS =====
+        cost_insights = []
+        
+        energy_rate = rates.get("energy_rate", 0.1271)
+        if energy_rate > 0.14:
+            cost_insights.append(
+                f"⚡ **Energy rate is high** (CHF {energy_rate:.4f}/kWh): Consider comparing "
+                "with other suppliers or negotiating your contract."
             )
-
+        
+        if rates.get("fixed_monthly", 10.50) > 12:
+            cost_insights.append(
+                f"📋 **High fixed charge** (CHF {rates.get('fixed_monthly', 10.50):.2f}/mo): "
+                "This is above average. Check if your tariff plan suits your usage."
+            )
+        
+        avg_price_per_kwh = total_bill / estimated_kwh if estimated_kwh > 0 else 0
+        if avg_price_per_kwh > 0.30:
+            cost_insights.append(
+                f"💰 **High all-in price** (CHF {avg_price_per_kwh:.2f}/kWh): Your effective "
+                "rate is above the Swiss average of ~0.27 CHF/kWh."
+            )
+        elif avg_price_per_kwh < 0.22 and avg_price_per_kwh > 0:
+            cost_insights.append(
+                f"✅ **Good rate** (CHF {avg_price_per_kwh:.2f}/kWh): Your effective rate "
+                "is below average - you're getting a good deal!"
+            )
+        
+        reasons["cost_insights"] = cost_insights if cost_insights else [
+            "✅ Your rates appear to be within normal Swiss ranges."
+        ]
+        
+        # ===== PERSONALIZED TIPS =====
+        tips = []
+        
+        if diff_kwh_pct > 20:
+            tips.extend([
+                "🔍 **Identify energy vampires**: Use a power meter to check standby consumption of your devices.",
+                "⏰ **Shift usage to off-peak**: Run dishwasher/washing machine during night hours (if your tariff supports it).",
+                "🌡️ **Check heating efficiency**: If using electric heating, consider a heat pump upgrade.",
+            ])
+        
+        if estimated_kwh > 300:
+            tips.extend([
+                "🧊 **Check your refrigerator**: Old fridges can use 3x more than modern A+++ models.",
+                "💡 **LED lighting**: If not already done, switch all bulbs - LEDs use 80% less energy.",
+            ])
+        
+        if pct_fixed > 15 and estimated_kwh < 250:
+            tips.append(
+                "📊 **Consider tariff change**: With low usage, a tariff with lower fixed fees "
+                "but higher variable rates might save you money."
+            )
+        
+        if canton in ["Geneva", "Lausanne", "Zürich"]:
+            tips.append(
+                "☀️ **Solar potential**: Urban areas often have good solar incentives. "
+                "Check your canton's subsidy programs for rooftop solar."
+            )
+        
+        # Default tips if none specific
+        if not tips:
+            tips = [
+                "💡 **Maintain efficiency**: Keep appliances clean and well-maintained.",
+                "🔌 **Smart power strips**: Use them to easily cut standby power.",
+                "📱 **Monitor usage**: Consider a smart meter to track consumption patterns.",
+            ]
+        
+        reasons["personalized_tips"] = tips
+        
+        # ===== QUICK ACTIONS =====
+        if diff_bill_pct > 20:
+            reasons["quick_actions"] = [
+                f"1️⃣ **Immediate**: Check for devices left running (estimated 10-20 CHF/month savings)",
+                f"2️⃣ **This week**: Replace any old incandescent bulbs with LED (saves ~5 CHF/month)",
+                f"3️⃣ **This month**: Review your tariff and compare with alternatives",
+            ]
+        elif diff_bill_pct > 0:
+            reasons["quick_actions"] = [
+                f"1️⃣ **Easy win**: Reduce standby consumption by unplugging unused devices",
+                f"2️⃣ **Habit change**: Turn off lights when leaving rooms",
+                f"3️⃣ **Long-term**: Plan to replace old appliances when they fail",
+            ]
+        else:
+            reasons["quick_actions"] = [
+                f"1️⃣ **Maintain**: Keep up your good energy habits!",
+                f"2️⃣ **Optimize further**: Consider time-of-use tariffs if available",
+                f"3️⃣ **Future-proof**: Look into solar or home battery options",
+            ]
+        
         return reasons
 
     def calculate_potential_savings(
