@@ -92,13 +92,13 @@ if 'eval_manager' not in st.session_state:
     st.session_state.eval_manager = EvaluationManager()
 
 # Title
-st.markdown('<h1 class="main-header">⚡ Energy Price & Consumption Explainability Dashboard</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Dual Explanation System: Numerical Analysis vs. Linguistic Fuzzy Reasoning</p>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">⚡ Fuzzy Logic Energy Explainability Dashboard</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Mamdani Fuzzy Inference System for Energy Market Analysis & Linguistic Reasoning</p>', unsafe_allow_html=True)
 
 # Main navigation
 main_mode = st.radio(
     "Select Module:",
-    ["🔮 Price Forecasting & Analysis", "💰 Bill Analysis & Optimization"],
+    ["💰 Bill Analysis & Optimization", "🔮 Price Forecasting & Analysis"],
     horizontal=True,
     key="main_mode"
 )
@@ -667,12 +667,402 @@ if main_mode == "💰 Bill Analysis & Optimization":
             })
             
             st.bar_chart(comparison_df.set_index('Category'))
-# ===== PRICE FORECASTING MODULE (Original Content) =====
+        
+        st.divider()
+        
+        # =============================================================================
+        # ===== FUZZY LOGIC BILL ANALYSIS (BASED ON REAL ENTSOE DATA) =====
+        # =============================================================================
+        st.header("🧠 Fuzzy Logic Energy Market Analysis")
+        
+        # Check if model is trained with real data
+        if st.session_state.model_trained and st.session_state.df is not None:
+            st.success("✅ Real market data available - Fuzzy analysis using actual ENTSOE data")
+            
+            # Initialize fuzzy explainer with real data
+            fuzzy = FuzzyExplainer()
+            
+            # Get metrics from trained model
+            metrics = st.session_state.predictor.get_metrics()
+            
+            # Generate fuzzy analysis from real data
+            if st.session_state.fuzzy_analysis is None:
+                st.session_state.fuzzy_analysis = fuzzy.analyze_data(st.session_state.df, metrics)
+            
+            fuzzy_analysis = st.session_state.fuzzy_analysis
+            
+            # =================================================================
+            # SECTION 1: FUZZY SYSTEM OVERVIEW
+            # =================================================================
+            st.subheader("📊 Fuzzy Inference System Overview")
+            st.caption("Mamdani-type FIS trained on real European energy market data")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Input Variables", "5", help="Price, Consumption, Hour, Volatility, Trend")
+            with col2:
+                st.metric("Output Variables", "2", help="Market Condition, Consumption Recommendation")
+            with col3:
+                st.metric("Fuzzy Rules", "28", help="20 market rules + 8 recommendation rules")
+            with col4:
+                st.metric("Inference Method", "Mamdani", help="Max-Min composition with centroid defuzzification")
+            
+            # Data source indicator
+            if st.session_state.data_source == 'entsoe':
+                st.info(f"🌍 **Live Data**: Analysis based on real ENTSOE data from European energy markets")
+            else:
+                st.info(f"📊 **Data Source**: {st.session_state.data_source}")
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 2: CURRENT MARKET FUZZY EVALUATION
+            # =================================================================
+            st.subheader("🎯 Current Market Conditions (Fuzzy Evaluation)")
+            
+            if 'fuzzy_evaluation' in fuzzy_analysis:
+                fe = fuzzy_analysis['fuzzy_evaluation']
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    market_score = fe.get('market_condition_score', 50)
+                    market_term = fe.get('market_condition_term', 'neutral')
+                    
+                    if market_score < 30:
+                        color = "🟢"
+                    elif market_score < 50:
+                        color = "🟡"
+                    elif market_score < 70:
+                        color = "🟠"
+                    else:
+                        color = "🔴"
+                    
+                    st.markdown(f"### {color} Market Condition")
+                    st.metric(
+                        "Fuzzy Output Score",
+                        f"{market_score:.1f}/100",
+                        f"{market_term.upper()}"
+                    )
+                    st.progress(market_score / 100)
+                    st.caption("0 = Very Favorable → 100 = Very Unfavorable")
+                
+                with col2:
+                    rec_score = fe.get('recommendation_score', 50)
+                    rec_term = fe.get('recommendation_term', 'normal')
+                    
+                    if rec_score > 70:
+                        color = "🟢"
+                    elif rec_score > 50:
+                        color = "🟡"
+                    elif rec_score > 30:
+                        color = "🟠"
+                    else:
+                        color = "🔴"
+                    
+                    st.markdown(f"### {color} Consumption Recommendation")
+                    st.metric(
+                        "Fuzzy Output Score",
+                        f"{rec_score:.1f}/100",
+                        f"{rec_term.upper()}"
+                    )
+                    st.progress(rec_score / 100)
+                    st.caption("0 = Avoid Consumption → 100 = Optimal Time")
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 3: BILL IMPACT FROM REAL MARKET DATA
+            # =================================================================
+            st.subheader("💰 Bill Impact Analysis (Based on Real Prices)")
+            
+            # Calculate bill impact from real price data
+            current_price = fuzzy_analysis['price']['current']
+            avg_price = fuzzy_analysis['price']['mean']
+            min_price = fuzzy_analysis['price']['min']
+            max_price = fuzzy_analysis['price']['max']
+            
+            # Estimate bill impact
+            estimated_monthly_kwh = analysis['estimated_kwh']
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                current_cost_estimate = (current_price / 1000) * estimated_monthly_kwh * 0.95  # Convert €/MWh to CHF/kWh approx
+                st.metric("At Current Price", f"CHF {current_cost_estimate:.2f}", 
+                         f"€{current_price:.2f}/MWh")
+            with col2:
+                optimal_cost = (min_price / 1000) * estimated_monthly_kwh * 0.95
+                savings_vs_current = current_cost_estimate - optimal_cost
+                st.metric("At Optimal Price", f"CHF {optimal_cost:.2f}",
+                         f"Save CHF {savings_vs_current:.2f}")
+            with col3:
+                peak_cost = (max_price / 1000) * estimated_monthly_kwh * 0.95
+                extra_vs_current = peak_cost - current_cost_estimate
+                st.metric("At Peak Price", f"CHF {peak_cost:.2f}",
+                         f"+CHF {extra_vs_current:.2f}")
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 4: MEMBERSHIP FUNCTION VISUALIZATION
+            # =================================================================
+            st.subheader("📈 Fuzzy Membership Functions (Real Data)")
+            st.markdown("Visualize how current market values are fuzzified into linguistic terms")
+            
+            selected_var = st.selectbox(
+                "Select Fuzzy Variable to Visualize:",
+                ["price", "consumption", "hour", "volatility", "trend", "market_condition", "recommendation"],
+                format_func=lambda x: {
+                    'price': f'⚡ Price (€/MWh) - Current: €{fuzzy_analysis["price"]["current"]:.2f}',
+                    'consumption': f'🔌 Consumption (%) - Current: {fuzzy_analysis["consumption"]["normalized"]:.1f}%',
+                    'hour': '🕐 Hour of Day',
+                    'volatility': f'📊 Volatility - σ={fuzzy_analysis["price"]["std"]:.2f}',
+                    'trend': f'📈 Price Trend - {fuzzy_analysis["price"]["trend_pct"]:+.1f}%',
+                    'market_condition': '🎯 Market Condition (Output)',
+                    'recommendation': '💡 Recommendation (Output)'
+                }.get(x, x)
+            )
+            
+            mf_data = fuzzy.get_membership_visualization_data(selected_var)
+            
+            if mf_data:
+                plot_df = pd.DataFrame({'x': mf_data['universe']})
+                
+                for term in mf_data:
+                    if term != 'universe':
+                        plot_df[term] = mf_data[term]
+                
+                st.line_chart(plot_df.set_index('x'))
+                
+                # Show current value memberships
+                if selected_var in ['price', 'consumption', 'hour', 'volatility', 'trend']:
+                    memberships = fuzzy_analysis.get('fuzzy_evaluation', {}).get('memberships', {}).get(selected_var, {})
+                    
+                    if memberships:
+                        st.markdown("**Current Input Membership Degrees:**")
+                        mem_cols = st.columns(len(memberships))
+                        for i, (term, degree) in enumerate(memberships.items()):
+                            with mem_cols[i]:
+                                bar = "█" * int(degree * 10) + "░" * (10 - int(degree * 10))
+                                st.markdown(f"**{term.replace('_', ' ').title()}**")
+                                st.code(f"[{bar}] {degree:.3f}")
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 5: ACTIVE FUZZY RULES
+            # =================================================================
+            st.subheader("📋 Active Fuzzy Rules (Currently Firing)")
+            st.markdown("Rules with firing strength > 0.3 based on real market conditions")
+            
+            active_rules = fuzzy_analysis.get('active_rules', [])
+            
+            if active_rules:
+                for rule in active_rules[:6]:
+                    strength = rule.get('strength', 0)
+                    
+                    if strength > 0.7:
+                        st.success(f"**Rule {rule.get('rule_id', '?')}** | Strength: {strength:.2f}")
+                    elif strength > 0.5:
+                        st.warning(f"**Rule {rule.get('rule_id', '?')}** | Strength: {strength:.2f}")
+                    else:
+                        st.info(f"**Rule {rule.get('rule_id', '?')}** | Strength: {strength:.2f}")
+                    
+                    st.code(rule.get('rule', ''))
+                    st.markdown(f"*{rule.get('interpretation', '')}*")
+                    st.markdown("---")
+            else:
+                st.info("No rules currently firing above threshold. Market conditions are balanced.")
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 6: OPTIMAL CONSUMPTION TIMES
+            # =================================================================
+            st.subheader("⏰ Optimal Consumption Times (From Real Data)")
+            
+            df_temp = st.session_state.df.copy()
+            df_temp['hour'] = pd.to_datetime(df_temp['datetime']).dt.hour
+            hourly_prices = df_temp.groupby('hour')['price'].mean()
+            
+            # Find best and worst hours
+            best_hours = hourly_prices.nsmallest(3)
+            worst_hours = hourly_prices.nlargest(3)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("### 🟢 Best Times to Use Energy")
+                for hour, price in best_hours.items():
+                    time_str = f"{hour:02d}:00 - {(hour+1)%24:02d}:00"
+                    st.success(f"**{time_str}** - Avg €{price:.2f}/MWh")
+                
+                st.markdown("*Schedule high-consumption tasks during these hours*")
+            
+            with col2:
+                st.markdown("### 🔴 Avoid These Times")
+                for hour, price in worst_hours.items():
+                    time_str = f"{hour:02d}:00 - {(hour+1)%24:02d}:00"
+                    st.error(f"**{time_str}** - Avg €{price:.2f}/MWh")
+                
+                st.markdown("*Minimize usage during peak pricing*")
+            
+            # Show hourly price chart
+            st.markdown("### 📊 Average Price by Hour")
+            st.bar_chart(hourly_prices)
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 7: LINGUISTIC EXPLANATION
+            # =================================================================
+            st.subheader("🗣️ Natural Language Fuzzy Explanation")
+            
+            explanation = fuzzy.generate_explanation(fuzzy_analysis)
+            st.markdown(explanation)
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 8: INTERACTIVE FUZZY SIMULATOR
+            # =================================================================
+            st.subheader("🎮 Interactive Fuzzy Inference Simulator")
+            st.markdown("Test the fuzzy system with custom values")
+            
+            with st.expander("Open Fuzzy Simulator", expanded=False):
+                sim_col1, sim_col2 = st.columns(2)
+                
+                with sim_col1:
+                    sim_price = st.slider("Price (€/MWh)", 0, 200, int(fuzzy_analysis['price']['current']), key="sim_price_bill")
+                    sim_consumption = st.slider("Consumption (%)", 0, 100, int(fuzzy_analysis['consumption']['normalized']), key="sim_cons_bill")
+                    sim_hour = st.slider("Hour of Day", 0, 23, 12, key="sim_hour_bill")
+                
+                with sim_col2:
+                    sim_volatility = st.slider("Volatility (σ)", 0, 50, int(fuzzy_analysis['price']['std']), key="sim_vol_bill")
+                    sim_trend = st.slider("24h Trend (%)", -50, 50, int(fuzzy_analysis['price']['trend_pct']), key="sim_trend_bill")
+                
+                if st.button("🔄 Run Fuzzy Inference", type="primary", key="run_fuzzy_bill"):
+                    sim_result = fuzzy.fuzzy_system.evaluate(
+                        price_value=sim_price,
+                        consumption_value=sim_consumption,
+                        hour_value=sim_hour,
+                        volatility_value=sim_volatility,
+                        trend_value=sim_trend
+                    )
+                    
+                    st.success("Fuzzy Inference Complete!")
+                    
+                    res_col1, res_col2 = st.columns(2)
+                    with res_col1:
+                        st.metric("Market Condition", f"{sim_result['market_condition']:.1f}/100")
+                    with res_col2:
+                        st.metric("Recommendation", f"{sim_result['recommendation']:.1f}/100")
+                    
+                    st.markdown("**Activated Rules:**")
+                    for r in sim_result['active_rules'][:3]:
+                        st.info(f"• {r['interpretation']}")
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 9: COMPLETE RULE BASE
+            # =================================================================
+            with st.expander("📖 View Complete Fuzzy Rule Base", expanded=False):
+                rules_summary = fuzzy.generate_fuzzy_rules_summary()
+                st.markdown(rules_summary)
+            
+            st.divider()
+            
+            # =================================================================
+            # SECTION 10: FUZZY THEORY EXPLANATION
+            # =================================================================
+            with st.expander("📚 About Fuzzy Logic Theory", expanded=False):
+                st.markdown("""
+                ### What is Fuzzy Logic?
+                
+                Fuzzy logic is a form of many-valued logic that deals with approximate reasoning, 
+                rather than fixed and exact reasoning. It was introduced by **Lotfi Zadeh** in 1965.
+                
+                ### Key Concepts
+                
+                **1. Fuzzy Sets**
+                Unlike classical sets where an element either belongs or doesn't (0 or 1), 
+                fuzzy sets allow partial membership between 0 and 1.
+                
+                **2. Membership Functions**
+                Define how each point in the input space is mapped to a membership degree:
+                - **Triangular (trimf)**: Defined by 3 points
+                - **Trapezoidal (trapmf)**: Defined by 4 points
+                
+                **3. Fuzzy Rules (IF-THEN)**
+                ```
+                IF price is HIGH AND consumption is HIGH THEN market is UNFAVORABLE
+                ```
+                
+                **4. Fuzzy Operations**
+                - **AND**: Minimum operator (min)
+                - **OR**: Maximum operator (max)
+                - **NOT**: Complement (1 - μ)
+                
+                ### Mamdani Inference Process
+                
+                1. **Fuzzification**: Convert crisp inputs to fuzzy membership degrees
+                2. **Rule Evaluation**: Apply IF-THEN rules using fuzzy operations
+                3. **Aggregation**: Combine outputs from all rules
+                4. **Defuzzification**: Convert fuzzy output to crisp value (centroid method)
+                
+                ### Why Fuzzy Logic for Energy Analysis?
+                
+                - **Handles Uncertainty**: Energy markets are inherently uncertain
+                - **Human-Readable Rules**: IF-THEN format is intuitive
+                - **Gradual Transitions**: No sharp category boundaries
+                - **Expert Knowledge**: Rules encode domain expertise
+                - **Explainability**: Every decision can be traced to specific rules
+                
+                ### References
+                
+                - Zadeh, L.A. (1965). Fuzzy Sets. Information and Control, 8(3), 338-353.
+                - Mamdani, E.H. (1974). Application of Fuzzy Algorithms for Control.
+                """)
+        
+        else:
+            # No trained model - show instructions
+            st.warning("⚠️ **Train the model first to enable Fuzzy Logic Analysis**")
+            st.markdown("""
+            ### How to Enable Fuzzy Analysis
+            
+            The fuzzy logic analysis requires real energy market data. Please:
+            
+            1. **Load Data** from the sidebar:
+               - Use **Sample Data** for quick testing
+               - Use **ENTSOE Data** for real European market analysis
+            
+            2. **Train the Model** by clicking the "Train Model" button
+            
+            3. Return here to see fuzzy analysis based on actual market conditions
+            
+            ---
+            
+            ### Why Real Data Matters
+            
+            The fuzzy inference system analyzes:
+            - **Real price patterns** from European energy markets
+            - **Actual consumption levels** and load profiles
+            - **True market volatility** and price trends
+            - **Peak hours** specific to your selected region
+            
+            This provides actionable insights for optimizing your electricity consumption and costs.
+            """)
+
+# ===== PRICE FORECASTING MODULE =====
 elif main_mode == "🔮 Price Forecasting & Analysis":
 
     # Main content
     if st.session_state.model_trained and st.session_state.predictor is not None:
-        st.success("✅ Model is trained and ready for explanation analysis")
+        st.success("✅ Model trained - Fuzzy Logic explainability ready")
+        
+        # Quick link to Fuzzy Analysis
+        st.info("💡 **Tip:** Visit the **💰 Bill Analysis & Optimization** module for comprehensive fuzzy inference analysis of your electricity bills!")
         
         # Display data summary with realistic energy market metrics
         with st.expander("📊 Energy Market Data Summary", expanded=False):
